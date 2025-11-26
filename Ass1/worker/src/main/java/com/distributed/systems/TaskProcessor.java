@@ -3,8 +3,8 @@ package com.distributed.systems;
 import com.distributed.systems.model.WorkerTaskMessage;
 import edu.stanford.nlp.ling.HasWord;
 import edu.stanford.nlp.ling.TaggedWord;
+import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
 import edu.stanford.nlp.parser.nndep.DependencyParser;
-import edu.stanford.nlp.parser.shiftreduce.ShiftReduceParser;
 import edu.stanford.nlp.process.DocumentPreprocessor;
 import edu.stanford.nlp.tagger.maxent.MaxentTagger;
 import edu.stanford.nlp.trees.GrammaticalStructure;
@@ -33,8 +33,7 @@ public class TaskProcessor {
     
     // Stanford NLP models - initialized lazily and reused
     private static MaxentTagger posTagger;
-    private static MaxentTagger constituencyTagger;
-    private static ShiftReduceParser constituencyParser;
+    private static LexicalizedParser constituencyParser;
     private static MaxentTagger dependencyTagger;
     private static DependencyParser dependencyParser;
     
@@ -251,23 +250,17 @@ public class TaskProcessor {
     }
     
     /**
-     * Performs constituency parsing on the input file using ShiftReduceParser
-     * Note: ShiftReduceParser requires pre-tagged text
+     * Performs constituency parsing on the input file using LexicalizedParser (PCFG)
      */
     private void performConstituencyParsing(File inputFile, File outputFile) throws Exception {
         logger.info("Performing constituency parsing");
         
-        // Initialize tagger and parser lazily
-        if (constituencyTagger == null || constituencyParser == null) {
+        // Initialize parser lazily
+        if (constituencyParser == null) {
             synchronized (TaskProcessor.class) {
-                if (constituencyTagger == null) {
-                    logger.info("Loading constituency tagger model...");
-                    constituencyTagger = new MaxentTagger("edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger");
-                    logger.info("Constituency tagger model loaded");
-                }
                 if (constituencyParser == null) {
                     logger.info("Loading constituency parser model...");
-                    constituencyParser = ShiftReduceParser.loadModel("edu/stanford/nlp/models/srparser/englishSR.ser.gz");
+                    constituencyParser = LexicalizedParser.loadModel("edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz");
                     logger.info("Constituency parser model loaded");
                 }
             }
@@ -283,10 +276,8 @@ public class TaskProcessor {
                 }
                 
                 try {
-                    // First tag the sentence
-                    List<TaggedWord> tagged = constituencyTagger.tagSentence(sentence);
-                    // Then parse the tagged sentence
-                    Tree parseTree = constituencyParser.apply(tagged);
+                    // Parse the sentence directly (LexicalizedParser handles tokenization internally)
+                    Tree parseTree = constituencyParser.apply(sentence);
                     writer.write(parseTree.toString());
                     writer.write("\n\n");
                 } catch (Exception e) {
