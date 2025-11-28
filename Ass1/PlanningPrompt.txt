@@ -1,0 +1,32 @@
+i have to do the task described in the assignment 1 .txt file.
+
+i know the structure i want to implement it. 
+this is a localApp-Manager-workers assignment using AWS limited services and Stanford University algo to handle txt files. 
+
+i want the code to be as generic as possible for fueture similar programs with different params and different tasks. the general structure will be the same- communication with aws will be the same, aws que comminication logic will be the same. 
+
+so i want to isolate the aws communication code, so i can call it from local/manager/workers and communicate simply with minimal error handle. everything possible to handle in the aws side code is better. 
+
+cecondly- i want to have local app that uploads a task file to s3, then check if is there a manager, if no-> create new one. after creation should establish new que by local unique id to recieve message back from the manager. then sent to the manager a task through the local->manager que and wait untill manager finish and indicate that he finished. when got what needed must delete all created ques and data in s3. we dont want to pay after finish.
+more detailes about options and messages are described in the txt file.
+
+the manager should make few tasks- should get tasks from many local apps-> parse it into workers jobs-> alocate new workers or delete workers when dont need them. also- he should create an answer file for each local task by combining workers answers into one result file. in the end he should publish the answer to the specific local app. so for that the manager should use the local app request id and transfer it to the workers so the workers will be able to tell back to manager what task they finished. the manager should have a convention where in s3 he saves and build each local app result file according to its id. the worker should allocate different threads to those tasks. also- manager should know his max workers limit and his current wanted workers and after finish task he should know to update the wanted workers number- if its less than current working workers he should kill some workers, if more what num of workers and still less than the limit- he should alocate more. 
+
+worker should know how to perform his tasks, how to parse the message and understand what he needs to do, cmmunicate back to the manager the location of the result file, and once again grab new task from the que. 
+
+when starting a manager or worker through ec2, both should use the same machine ami and same role iam. the difference is the script that tell one to download and run jar file for manager and the second to the same but jar for worker. jars should be pre saved on s3 so the location is known in the code. 
+
+there maight be few local apps, 1 manager, multiple workers according to local app needs and to global limit. we will use local->manager que, Manager->worker que, Worker->manager que, manager->local que for each local app. the specific local app que should be deleted after local app done. 
+
+i want the code to be stracturaly abstract classes, so the specific implementation to this task will be an implementation to those abstract classes that passes the specific args, limitations, locations, names, task behavior and more specific data that is relevant only for this task and not for other fueture local-manager-workers tasks. the shared logic should be in abstract classes that uses getters for example to specific params that will be implemented later by the instanse class, and task behavioral classes that implement task logic.  
+
+i have seen and reviewed other assignments from last year- they had to do other job in the workers, but the consepts are the same. my vision is an improvement of what i so to make it more usefull and easy to reuse later for more tasks. 
+
+as part of the planing i want you to make an orginized .md file that describes the needs i tild you here combining with the task describtion in the assignment1.txt file, and the idea of implementation i started to tell here + your ideas / questions about it. this will help us get to the solution and define it better and get better results
+
+
+questions:
+1. Need shared AWS library structure? Option A single module / Option B duplicated per component.
+ans-1: each module will run on different machine- local will run on my pc, manager on aws machine and eack worker on different aws machine. so im not sure single module is implementable. maybe i dont understand what is single module. dup per machine maybe is what i need, bit still maybe i didnt understand the differences. whats important is that the code will be writen in one place only so any change will be valid from everyplace i use aws services.
+2. Where should Stanford NLP integration live—worker core vs pluggable analyzer?
+ans-2: the worker should get an object that knows taking a type of message, parse it, understand what it should do, and do it. the worker should tell the flow(get a message, pass it to the handler, create message back to manager, handle errors and worker things.)
