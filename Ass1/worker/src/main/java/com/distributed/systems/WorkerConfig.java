@@ -31,7 +31,7 @@ public class WorkerConfig {
         this.outputQueueName = getEnvOrDefault("WORKER_OUTPUT_QUEUE", "worker-results-queue");
         
         // S3 bucket
-        this.s3BucketName = getEnvOrDefault("S3_BUCKET_NAME", "text-analysis-resultss");
+        this.s3BucketName = getEnvOrDefault("S3_BUCKET_NAME", "ds-assignment-1");
         
         // AWS Region
         this.awsRegion = getEnvOrDefault("AWS_REGION", "us-east-1");
