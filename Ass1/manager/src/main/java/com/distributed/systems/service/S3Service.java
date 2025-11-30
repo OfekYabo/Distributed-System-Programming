@@ -33,7 +33,7 @@ public class S3Service implements AutoCloseable {
                 .region(Region.of(config.getAwsRegion()))
                 .build();
         
-        logger.info("S3Service initialized for region: {}", config.getAwsRegion());
+        logger.info("Initialized (region: {})", config.getAwsRegion());
     }
     
     /**
@@ -56,11 +56,11 @@ public class S3Service implements AutoCloseable {
              var reader = new BufferedReader(new InputStreamReader(response, StandardCharsets.UTF_8))) {
             
             String content = reader.lines().collect(Collectors.joining("\n"));
-            logger.info("Downloaded file from S3: s3://{}/{} ({} bytes)", bucket, key, content.length());
+            logger.debug("Downloaded s3://{}/{} ({} bytes)", bucket, key, content.length());
             return content;
             
         } catch (Exception e) {
-            logger.error("Failed to download from S3: s3://{}/{}", bucket, key, e);
+            logger.error("Failed to download from S3: s3://{}/{} - {}", bucket, key, e.getMessage());
             throw new RuntimeException("Failed to download from S3", e);
         }
     }
@@ -92,11 +92,11 @@ public class S3Service implements AutoCloseable {
                 }
             }
             
-            logger.info("Downloaded file from S3: s3://{}/{} ({} lines)", bucket, key, lines.size());
+            logger.debug("Downloaded s3://{}/{} ({} lines)", bucket, key, lines.size());
             return lines;
             
         } catch (Exception e) {
-            logger.error("Failed to download from S3: s3://{}/{}", bucket, key, e);
+            logger.error("Failed to download from S3: s3://{}/{} - {}", bucket, key, e.getMessage());
             throw new RuntimeException("Failed to download from S3", e);
         }
     }
@@ -121,7 +121,7 @@ public class S3Service implements AutoCloseable {
         s3Client.putObject(request, RequestBody.fromString(content, StandardCharsets.UTF_8));
         
         String s3Url = String.format("s3://%s/%s", bucket, key);
-        logger.info("Uploaded file to S3: {} ({} bytes)", s3Url, content.length());
+        logger.debug("Uploaded {} ({} bytes)", s3Url, content.length());
         
         return s3Url;
     }
@@ -159,7 +159,7 @@ public class S3Service implements AutoCloseable {
     public void close() {
         if (s3Client != null) {
             s3Client.close();
-            logger.info("S3Service closed");
+            logger.info("Closed");
         }
     }
 }

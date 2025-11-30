@@ -1,11 +1,13 @@
 package com.distributed.systems.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Base class for Worker responses (both success and error)
  * Used for initial parsing to determine type
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class WorkerResponse {
     
     public static final String TYPE_SUCCESS = "urlParseResponse";

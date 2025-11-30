@@ -34,7 +34,7 @@ public class Ec2Service implements AutoCloseable {
                 .region(Region.of(config.getAwsRegion()))
                 .build();
         
-        logger.info("Ec2Service initialized for region: {}", config.getAwsRegion());
+        logger.info("Initialized (region: {})", config.getAwsRegion());
     }
     
     /**
@@ -96,7 +96,7 @@ public class Ec2Service implements AutoCloseable {
             return instanceIds;
             
         } catch (Exception e) {
-            logger.error("Failed to launch worker instances", e);
+            logger.error("Failed to launch worker instances: {}", e.getMessage());
             throw new RuntimeException("Failed to launch workers", e);
         }
     }
@@ -106,16 +106,27 @@ public class Ec2Service implements AutoCloseable {
      */
     private String createWorkerUserDataScript() {
         // This script runs when the instance starts
-        // It should start the worker JAR file
+        // It installs Java, downloads worker.jar from S3, and runs it
         return "#!/bin/bash\n" +
+               "set -e\n" +
+               "exec > /var/log/user-data.log 2>&1\n" +
+               "echo 'Starting worker bootstrap...'\n" +
                "cd /home/ec2-user\n" +
+               "# Install Java 11 (Amazon Corretto)\n" +
+               "echo 'Installing Java...'\n" +
+               "dnf install -y java-11-amazon-corretto-headless\n" +
+               "# Download worker.jar from S3 (AWS CLI is pre-installed on Amazon Linux 2023)\n" +
+               "echo 'Downloading worker.jar from S3...'\n" +
+               "aws s3 cp s3://" + config.getS3BucketName() + "/worker.jar /home/ec2-user/worker.jar\n" +
                "# Set environment variables\n" +
                "export AWS_REGION=" + config.getAwsRegion() + "\n" +
                "export WORKER_INPUT_QUEUE=" + config.getWorkerInputQueue() + "\n" +
                "export WORKER_OUTPUT_QUEUE=" + config.getWorkerOutputQueue() + "\n" +
                "export S3_BUCKET_NAME=" + config.getS3BucketName() + "\n" +
                "# Run the worker\n" +
-               "java -jar worker.jar >> /var/log/worker.log 2>&1 &\n";
+               "echo 'Starting worker...'\n" +
+               "java -jar worker.jar >> /var/log/worker.log 2>&1 &\n" +
+               "echo 'Worker started successfully'\n";
     }
     
     /**
@@ -172,7 +183,7 @@ public class Ec2Service implements AutoCloseable {
             ec2Client.terminateInstances(request);
             logger.info("Termination request sent for {} instance(s)", instanceIds.size());
         } catch (Exception e) {
-            logger.error("Failed to terminate instances", e);
+            logger.error("Failed to terminate instances: {}", e.getMessage());
             throw new RuntimeException("Failed to terminate instances", e);
         }
     }
@@ -228,7 +239,7 @@ public class Ec2Service implements AutoCloseable {
     public void close() {
         if (ec2Client != null) {
             ec2Client.close();
-            logger.info("Ec2Service closed");
+            logger.info("Closed");
         }
     }
 }

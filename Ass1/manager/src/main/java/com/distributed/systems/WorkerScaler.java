@@ -38,7 +38,7 @@ public class WorkerScaler implements Runnable {
     
     @Override
     public void run() {
-        logger.info("WorkerScaler started (interval: {}s)", config.getScalingIntervalSeconds());
+        logger.info("Started (interval: {}s)", config.getScalingIntervalSeconds());
         
         while (running.get()) {
             try {
@@ -54,12 +54,12 @@ public class WorkerScaler implements Runnable {
                 sleep(config.getScalingIntervalSeconds() * 1000L);
                 
             } catch (Exception e) {
-                logger.error("Error in WorkerScaler", e);
+                logger.error("Error in WorkerScaler: {}", e.getMessage());
                 sleep(5000);
             }
         }
         
-        logger.info("WorkerScaler stopped");
+        logger.info("Stopped");
     }
     
     /**
@@ -103,7 +103,7 @@ public class WorkerScaler implements Runnable {
             // Workers will naturally finish their tasks
             
         } catch (Exception e) {
-            logger.error("Error during scaling check", e);
+            logger.error("Error during scaling check: {}", e.getMessage());
         }
     }
     
@@ -121,7 +121,7 @@ public class WorkerScaler implements Runnable {
             ec2Service.waitForWorkersToTerminate(120); // 2 minute timeout
             
         } catch (Exception e) {
-            logger.error("Error terminating workers", e);
+            logger.error("Error terminating workers: {}", e.getMessage());
         }
     }
     
@@ -132,7 +132,7 @@ public class WorkerScaler implements Runnable {
         try {
             return ec2Service.getRunningWorkerCount();
         } catch (Exception e) {
-            logger.error("Error getting worker count", e);
+            logger.error("Error getting worker count: {}", e.getMessage());
             return 0;
         }
     }

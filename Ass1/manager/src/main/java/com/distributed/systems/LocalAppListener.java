@@ -46,7 +46,7 @@ public class LocalAppListener implements Runnable {
     
     @Override
     public void run() {
-        logger.info("LocalAppListener started");
+        logger.info("Started");
         
         while (running.get()) {
             try {
@@ -62,12 +62,12 @@ public class LocalAppListener implements Runnable {
                 }
                 
             } catch (Exception e) {
-                logger.error("Error in LocalAppListener", e);
+                logger.error("Error in LocalAppListener: {}", e.getMessage());
                 sleep(5000);
             }
         }
         
-        logger.info("LocalAppListener stopped");
+        logger.info("Stopped");
     }
     
     /**
@@ -88,7 +88,7 @@ public class LocalAppListener implements Runnable {
             }
             
         } catch (Exception e) {
-            logger.error("Failed to process message from local app", e);
+            logger.error("Failed to process message from local app: {}", e.getMessage());
             // Don't delete - will retry after visibility timeout
         }
     }
@@ -172,7 +172,7 @@ public class LocalAppListener implements Runnable {
             sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
             
         } catch (Exception e) {
-            logger.error("Failed to process new task: {}", inputFileS3Key, e);
+            logger.error("Failed to process new task {}: {}", inputFileS3Key, e.getMessage());
             // Don't delete - will retry after visibility timeout
         }
     }

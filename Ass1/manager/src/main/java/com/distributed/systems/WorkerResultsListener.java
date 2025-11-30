@@ -44,7 +44,7 @@ public class WorkerResultsListener implements Runnable {
     
     @Override
     public void run() {
-        logger.info("WorkerResultsListener started");
+        logger.info("Started");
         
         while (running.get()) {
             try {
@@ -60,12 +60,12 @@ public class WorkerResultsListener implements Runnable {
                 }
                 
             } catch (Exception e) {
-                logger.error("Error in WorkerResultsListener", e);
+                logger.error("Error in WorkerResultsListener: {}", e.getMessage());
                 sleep(5000);
             }
         }
         
-        logger.info("WorkerResultsListener stopped");
+        logger.info("Stopped");
     }
     
     /**
@@ -97,7 +97,7 @@ public class WorkerResultsListener implements Runnable {
             sqsService.deleteMessage(config.getWorkerOutputQueue(), message);
             
         } catch (Exception e) {
-            logger.error("Failed to process worker message", e);
+            logger.error("Failed to process worker message: {}", e.getMessage());
             // Don't delete - will retry after visibility timeout
         }
     }
@@ -168,7 +168,7 @@ public class WorkerResultsListener implements Runnable {
             jobTracker.removeJob(inputFileS3Key);
             
         } catch (Exception e) {
-            logger.error("Failed to handle job completion for {}", inputFileS3Key, e);
+            logger.error("Failed to handle job completion for {}: {}", inputFileS3Key, e.getMessage());
         }
     }
     

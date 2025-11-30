@@ -20,14 +20,12 @@ public class Worker {
     
     private static final Logger logger = LoggerFactory.getLogger(Worker.class);
     
-    private final WorkerConfig config;
     private final SqsMessageHandler sqsHandler;
     private final TaskProcessor taskProcessor;
     private final S3Uploader s3Uploader;
     private final AtomicBoolean running;
     
     public Worker(WorkerConfig config) {
-        this.config = config;
         this.running = new AtomicBoolean(true);
         
         // Initialize AWS clients
