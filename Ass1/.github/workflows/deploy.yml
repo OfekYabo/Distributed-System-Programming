@@ -1,0 +1,128 @@
+name: Build and Deploy to S3
+
+on:
+  push:
+    branches:
+      - main
+      - manager
+    paths:
+      - 'manager/**'
+      - 'worker/**'
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  S3_BUCKET: text-analysis-resultss
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      manager: ${{ steps.changes.outputs.manager }}
+      worker: ${{ steps.changes.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -q '^manager/'; then
+            echo "manager=true" >> $GITHUB_OUTPUT
+          else
+            echo "manager=false" >> $GITHUB_OUTPUT
+          fi
+          if git diff --name-only HEAD~1 HEAD | grep -q '^worker/'; then
+            echo "worker=true" >> $GITHUB_OUTPUT
+          else
+            echo "worker=false" >> $GITHUB_OUTPUT
+          fi
+
+  setup-s3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create S3 bucket if not exists
+        run: |
+          if ! aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            echo "Creating bucket $S3_BUCKET..."
+            aws s3api create-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"
+            echo "Bucket created successfully"
+          else
+            echo "Bucket $S3_BUCKET already exists"
+          fi
+
+  deploy-manager:
+    needs: [detect-changes, setup-s3]
+    if: needs.detect-changes.outputs.manager == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: manager
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: maven
+
+      - name: Build manager with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload manager.jar to S3
+        run: |
+          aws s3 cp target/manager-1.0-SNAPSHOT.jar s3://$S3_BUCKET/manager.jar
+          echo "✅ Uploaded manager.jar to s3://$S3_BUCKET/manager.jar"
+
+  deploy-worker:
+    needs: [detect-changes, setup-s3]
+    if: needs.detect-changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: maven
+
+      - name: Build worker with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload worker.jar to S3
+        run: |
+          aws s3 cp target/worker-1.0-SNAPSHOT.jar s3://$S3_BUCKET/worker.jar
+          echo "✅ Uploaded worker.jar to s3://$S3_BUCKET/worker.jar"
+
