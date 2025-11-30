@@ -34,7 +34,7 @@ public class SqsService implements AutoCloseable {
                 .region(Region.of(config.getAwsRegion()))
                 .build();
         
-        logger.info("SqsService initialized for region: {}", config.getAwsRegion());
+        logger.info("Initialized (region: {})", config.getAwsRegion());
     }
     
     /**
@@ -55,6 +55,58 @@ public class SqsService implements AutoCloseable {
                 throw new RuntimeException("Queue not found: " + name, e);
             }
         });
+    }
+    
+    /**
+     * Creates a queue if it doesn't exist
+     * @param queueName the name of the queue to create
+     * @return the queue URL
+     */
+    public String createQueueIfNotExists(String queueName) {
+        try {
+            // First check if queue already exists
+            GetQueueUrlRequest getRequest = GetQueueUrlRequest.builder()
+                    .queueName(queueName)
+                    .build();
+            
+            GetQueueUrlResponse getResponse = sqsClient.getQueueUrl(getRequest);
+            String queueUrl = getResponse.queueUrl();
+            logger.info("'{}' - exists", queueName);
+            queueUrlCache.put(queueName, queueUrl);
+            return queueUrl;
+            
+        } catch (QueueDoesNotExistException e) {
+            // Queue doesn't exist, create it
+            logger.info("'{}' - creating...", queueName);
+            
+            CreateQueueRequest createRequest = CreateQueueRequest.builder()
+                    .queueName(queueName)
+                    .attributes(Map.of(
+                            QueueAttributeName.VISIBILITY_TIMEOUT, String.valueOf(config.getVisibilityTimeoutSeconds()),
+                            QueueAttributeName.RECEIVE_MESSAGE_WAIT_TIME_SECONDS, String.valueOf(config.getWaitTimeSeconds())
+                    ))
+                    .build();
+            
+            CreateQueueResponse createResponse = sqsClient.createQueue(createRequest);
+            String queueUrl = createResponse.queueUrl();
+            logger.info("'{}' - created", queueName);
+            queueUrlCache.put(queueName, queueUrl);
+            return queueUrl;
+        }
+    }
+    
+    /**
+     * Ensures all required queues exist, creating them if necessary
+     */
+    public void ensureQueuesExist() {
+        logger.info("Checking SQS queues...");
+        
+        createQueueIfNotExists(config.getLocalAppInputQueue());
+        createQueueIfNotExists(config.getLocalAppOutputQueue());
+        createQueueIfNotExists(config.getWorkerInputQueue());
+        createQueueIfNotExists(config.getWorkerOutputQueue());
+        
+        logger.info("All queues ready");
     }
     
     /**
@@ -95,7 +147,7 @@ public class SqsService implements AutoCloseable {
             String messageBody = objectMapper.writeValueAsString(message);
             sendRawMessage(queueName, messageBody);
         } catch (Exception e) {
-            logger.error("Failed to serialize message", e);
+            logger.error("Failed to serialize message: {}", e.getMessage());
             throw new RuntimeException("Failed to send message", e);
         }
     }
@@ -177,7 +229,7 @@ public class SqsService implements AutoCloseable {
     public void close() {
         if (sqsClient != null) {
             sqsClient.close();
-            logger.info("SqsService closed");
+            logger.info("Closed");
         }
     }
 }

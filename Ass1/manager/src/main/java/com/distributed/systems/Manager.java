@@ -67,7 +67,7 @@ public class Manager {
         
         this.lastActivityTime = System.currentTimeMillis();
         
-        logger.info("Manager initialized with config: {}", config);
+        logger.info("Initialized (bucket: {}, region: {})", config.getS3BucketName(), config.getAwsRegion());
     }
     
     /**
@@ -75,6 +75,9 @@ public class Manager {
      */
     public void start() {
         logger.info("=== Manager Starting ===");
+        
+        // Ensure all SQS queues exist
+        sqsService.ensureQueuesExist();
         
         // Setup shutdown hook
         setupShutdownHook();
@@ -87,7 +90,7 @@ public class Manager {
         executorService.submit(workerResultsListener);
         executorService.submit(workerScaler);
         
-        logger.info("All listener threads started");
+        logger.info("All threads started");
         
         // Main monitoring loop
         monitorAndManage();
@@ -105,7 +108,7 @@ public class Manager {
             try {
                 // Check if we should terminate
                 if (shouldTerminate()) {
-                    logger.info("Termination condition met - initiating shutdown");
+                    logger.info("Terminating...");
                     running.set(false);
                     break;
                 }
@@ -125,7 +128,7 @@ public class Manager {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                logger.error("Error in monitor loop", e);
+                logger.error("Error in monitor loop: {}", e.getMessage());
             }
         }
     }
@@ -163,8 +166,7 @@ public class Manager {
         int pendingTasks = jobTracker.getTotalPendingTasks();
         int runningWorkers = workerScaler.getRunningWorkerCount();
         
-        logger.info("Status: jobs={}, pendingTasks={}, workers={}, accepting={}, terminate={}", 
-                activeJobs, pendingTasks, runningWorkers, acceptingJobs.get(), terminateRequested.get());
+        logger.info("jobs={} pending={} workers={}", activeJobs, pendingTasks, runningWorkers);
     }
     
     /**
@@ -208,19 +210,19 @@ public class Manager {
         try {
             sqsService.close();
         } catch (Exception e) {
-            logger.error("Error closing SqsService", e);
+            logger.error("Error closing SqsService: {}", e.getMessage());
         }
         
         try {
             s3Service.close();
         } catch (Exception e) {
-            logger.error("Error closing S3Service", e);
+            logger.error("Error closing S3Service: {}", e.getMessage());
         }
         
         try {
             ec2Service.close();
         } catch (Exception e) {
-            logger.error("Error closing Ec2Service", e);
+            logger.error("Error closing Ec2Service: {}", e.getMessage());
         }
     }
     
@@ -245,7 +247,7 @@ public class Manager {
             Manager manager = new Manager(config);
             manager.start();
         } catch (Exception e) {
-            logger.error("Fatal error in manager", e);
+            logger.error("Fatal error in manager: {}", e.getMessage());
             System.exit(1);
         }
         
