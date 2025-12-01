@@ -7,6 +7,11 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+
+import java.time.Duration;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -22,15 +27,23 @@ import java.util.stream.Collectors;
 public class S3Service implements AutoCloseable {
     
     private static final Logger logger = LoggerFactory.getLogger(S3Service.class);
+    private static final Duration PRESIGNED_URL_EXPIRATION = Duration.ofHours(24);
     
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final ManagerConfig config;
     
     public S3Service(ManagerConfig config) {
         this.config = config;
         
+        Region region = Region.of(config.getAwsRegion());
+        
         this.s3Client = S3Client.builder()
-                .region(Region.of(config.getAwsRegion()))
+                .region(region)
+                .build();
+        
+        this.s3Presigner = S3Presigner.builder()
+                .region(region)
                 .build();
         
         logger.info("Initialized (region: {})", config.getAwsRegion());
@@ -149,6 +162,59 @@ public class S3Service implements AutoCloseable {
     }
     
     /**
+     * Generates a presigned URL for temporary public access to an S3 object
+     */
+    public String generatePresignedUrl(String key) {
+        return generatePresignedUrl(config.getS3BucketName(), key);
+    }
+    
+    /**
+     * Generates a presigned URL for temporary public access to an S3 object
+     */
+    public String generatePresignedUrl(String bucket, String key) {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .build();
+        
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(PRESIGNED_URL_EXPIRATION)
+                .getObjectRequest(getObjectRequest)
+                .build();
+        
+        PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
+        String presignedUrl = presignedRequest.url().toString();
+        
+        logger.debug("Generated presigned URL for s3://{}/{} (expires in {})", 
+                bucket, key, PRESIGNED_URL_EXPIRATION);
+        
+        return presignedUrl;
+    }
+    
+    /**
+     * Generates a presigned URL from an S3 URL (s3://bucket/key format)
+     */
+    public String generatePresignedUrlFromS3Url(String s3Url) {
+        if (s3Url == null || !s3Url.startsWith("s3://")) {
+            logger.warn("Invalid S3 URL format: {}", s3Url);
+            return s3Url;
+        }
+        
+        // Parse s3://bucket/key format
+        String withoutPrefix = s3Url.substring(5); // Remove "s3://"
+        int slashIndex = withoutPrefix.indexOf('/');
+        if (slashIndex == -1) {
+            logger.warn("Invalid S3 URL format (no key): {}", s3Url);
+            return s3Url;
+        }
+        
+        String bucket = withoutPrefix.substring(0, slashIndex);
+        String key = withoutPrefix.substring(slashIndex + 1);
+        
+        return generatePresignedUrl(bucket, key);
+    }
+    
+    /**
      * Gets the bucket name from config
      */
     public String getBucketName() {
@@ -157,6 +223,9 @@ public class S3Service implements AutoCloseable {
     
     @Override
     public void close() {
+        if (s3Presigner != null) {
+            s3Presigner.close();
+        }
         if (s3Client != null) {
             s3Client.close();
             logger.info("Closed");

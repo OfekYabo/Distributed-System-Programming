@@ -96,11 +96,14 @@ public class HtmlSummaryGenerator {
         // Results
         for (JobTracker.TaskResult result : results) {
             if (result.success) {
+                // Generate presigned URL for public access
+                String presignedUrl = s3Service.generatePresignedUrlFromS3Url(result.outputS3Url);
+                
                 html.append("  <div class=\"result success\">\n");
                 html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod)).append("</span>: ");
                 html.append("    <a href=\"").append(escapeHtml(result.url)).append("\" target=\"_blank\">");
                 html.append(escapeHtml(result.url)).append("</a> ");
-                html.append("    <a href=\"").append(escapeHtml(result.outputS3Url)).append("\" target=\"_blank\">");
+                html.append("    <a href=\"").append(escapeHtml(presignedUrl)).append("\" target=\"_blank\">");
                 html.append("[Output]</a>\n");
                 html.append("  </div>\n");
             } else {
