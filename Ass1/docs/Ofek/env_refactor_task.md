@@ -1,0 +1,14 @@
+- [ ] Plan .env task <!-- id: 0 -->
+- [x] Explore codebase for configuration parameters <!-- id: 1 -->
+- [x] Check for `pom.xml` and target directories <!-- id: 2 -->
+- [x] Create `implementation_plan.md` <!-- id: 3 -->
+- [x] Sync plans to `docs/Ofek` <!-- id: 4 -->
+- [ ] Execute Refactoring <!-- id: 5 -->
+- [ ] Add `java-dotenv` dependency <!-- id: 6 -->
+- [ ] Create `.env.example` <!-- id: 7 -->
+- [ ] Create `.env` with defaults <!-- id: 8 -->
+- [ ] Refactor `LocalAppConfig.java` <!-- id: 9 -->
+- [ ] Refactor `ManagerConfig.java` <!-- id: 10 -->
+- [ ] Refactor `WorkerConfig.java` <!-- id: 11 -->
+- [ ] Verify Changes <!-- id: 12 -->
+- [ ] Manual verification of config loading <!-- id: 13 -->

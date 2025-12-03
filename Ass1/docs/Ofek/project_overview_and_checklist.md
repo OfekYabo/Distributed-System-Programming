@@ -49,3 +49,12 @@ Legend:
 - [v] EC2 Instance launching (AMI, User Data script)
 - [v] Security (IAM Roles, Security Groups - assumed configured in AWS)
 - [ ] **Full System Test on AWS** (Requires deployment)
+
+## Refactoring: Shared AWS Services
+Goal: Centralize AWS logic into a shared library to reduce duplication.
+- [ ] Create `shared-lib` module
+- [ ] Refactor `local-app` to use shared services
+- [ ] Refactor `manager` to use shared services
+- [ ] Refactor `worker` to use shared services
+- [ ] Verify all components build and run
+
