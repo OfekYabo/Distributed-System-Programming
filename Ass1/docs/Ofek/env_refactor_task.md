@@ -1,4 +1,4 @@
-- [ ] Plan .env task <!-- id: 0 -->
+- [x] Plan .env task <!-- id: 0 -->
 - [x] Explore codebase for configuration parameters <!-- id: 1 -->
 - [x] Check for `pom.xml` and target directories <!-- id: 2 -->
 - [x] Create `implementation_plan.md` <!-- id: 3 -->
