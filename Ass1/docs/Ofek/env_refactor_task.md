@@ -3,12 +3,12 @@
 - [x] Check for `pom.xml` and target directories <!-- id: 2 -->
 - [x] Create `implementation_plan.md` <!-- id: 3 -->
 - [x] Sync plans to `docs/Ofek` <!-- id: 4 -->
-- [ ] Execute Refactoring <!-- id: 5 -->
-- [ ] Add `java-dotenv` dependency <!-- id: 6 -->
-- [ ] Create `.env.example` <!-- id: 7 -->
-- [ ] Create `.env` with defaults <!-- id: 8 -->
-- [ ] Refactor `LocalAppConfig.java` <!-- id: 9 -->
-- [ ] Refactor `ManagerConfig.java` <!-- id: 10 -->
-- [ ] Refactor `WorkerConfig.java` <!-- id: 11 -->
-- [ ] Verify Changes <!-- id: 12 -->
-- [ ] Manual verification of config loading <!-- id: 13 -->
+- [x] Execute Refactoring <!-- id: 5 -->
+- [x] Add `java-dotenv` dependency <!-- id: 6 -->
+- [x] Create `.env.example` <!-- id: 7 -->
+- [x] Create `.env` with defaults <!-- id: 8 -->
+- [x] Refactor `LocalAppConfig.java` <!-- id: 9 -->
+- [x] Refactor `ManagerConfig.java` <!-- id: 10 -->
+- [x] Refactor `WorkerConfig.java` <!-- id: 11 -->
+- [x] Verify Changes <!-- id: 12 -->
+- [x] Manual verification of config loading <!-- id: 13 -->

@@ -1,104 +1,107 @@
 package com.distributed.systems;
 
+import io.github.cdimascio.dotenv.Dotenv;
+
 /**
  * Configuration class for Worker
  * Reads configuration from environment variables with sensible defaults
  */
 public class WorkerConfig {
-    
+
     // Queue names
     private final String inputQueueName;
     private final String outputQueueName;
-    
+
     // S3 configuration
     private final String s3BucketName;
-    
+
     // AWS Region
     private final String awsRegion;
-    
+
     // SQS configuration
     private final int visibilityTimeoutSeconds;
     private final int waitTimeSeconds;
     private final int maxNumberOfMessages;
-    
+
     // Processing configuration
     private final int maxProcessingTimeSeconds;
     private final String tempDirectory;
-    
+
     public WorkerConfig() {
+        Dotenv dotenv = Dotenv.load();
+
         // Queue names - should be set via environment variables
-        this.inputQueueName = getEnvOrDefault("WORKER_INPUT_QUEUE", "worker-tasks-queue");
-        this.outputQueueName = getEnvOrDefault("WORKER_OUTPUT_QUEUE", "worker-results-queue");
-        
+        this.inputQueueName = getRequiredEnv(dotenv, "WORKER_INPUT_QUEUE");
+        this.outputQueueName = getRequiredEnv(dotenv, "WORKER_OUTPUT_QUEUE");
+
         // S3 bucket
-        this.s3BucketName = getEnvOrDefault("S3_BUCKET_NAME", "ds-assignment-1");
-        
+        this.s3BucketName = getRequiredEnv(dotenv, "S3_BUCKET_NAME");
+
         // AWS Region
-        this.awsRegion = getEnvOrDefault("AWS_REGION", "us-east-1");
-        
+        this.awsRegion = getRequiredEnv(dotenv, "AWS_REGION");
+
         // SQS settings
-        this.visibilityTimeoutSeconds = getEnvOrDefaultInt("VISIBILITY_TIMEOUT_SECONDS", 300); // 5 minutes
-        this.waitTimeSeconds = getEnvOrDefaultInt("WAIT_TIME_SECONDS", 20); // Long polling
-        this.maxNumberOfMessages = getEnvOrDefaultInt("MAX_MESSAGES", 1);
-        
+        this.visibilityTimeoutSeconds = getRequiredIntEnv(dotenv, "VISIBILITY_TIMEOUT_SECONDS");
+        this.waitTimeSeconds = getRequiredIntEnv(dotenv, "WAIT_TIME_SECONDS");
+        this.maxNumberOfMessages = getRequiredIntEnv(dotenv, "WORKER_MAX_MESSAGES");
         // Processing settings
-        this.maxProcessingTimeSeconds = getEnvOrDefaultInt("MAX_PROCESSING_TIME_SECONDS", 240); // 4 minutes
-        this.tempDirectory = getEnvOrDefault("TEMP_DIR", "/tmp/worker");
+        this.maxProcessingTimeSeconds = getRequiredIntEnv(dotenv, "MAX_PROCESSING_TIME_SECONDS");
+        this.tempDirectory = getRequiredEnv(dotenv, "TEMP_DIR");
     }
-    
-    private String getEnvOrDefault(String envVar, String defaultValue) {
-        String value = System.getenv(envVar);
-        return value != null ? value : defaultValue;
-    }
-    
-    private int getEnvOrDefaultInt(String envVar, int defaultValue) {
-        String value = System.getenv(envVar);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return defaultValue;
-            }
+
+    private String getRequiredEnv(Dotenv dotenv, String envVar) {
+        String value = dotenv.get(envVar);
+        if (value == null || value.trim().isEmpty()) {
+            throw new RuntimeException("Missing required environment variable: " + envVar);
         }
-        return defaultValue;
+        return value;
     }
-    
+
+    private int getRequiredIntEnv(Dotenv dotenv, String envVar) {
+        String value = getRequiredEnv(dotenv, envVar);
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new RuntimeException("Invalid integer for environment variable: " + envVar, e);
+        }
+    }
+
     public String getInputQueueName() {
         return inputQueueName;
     }
-    
+
     public String getOutputQueueName() {
         return outputQueueName;
     }
-    
+
     public String getS3BucketName() {
         return s3BucketName;
     }
-    
+
     public String getAwsRegion() {
         return awsRegion;
     }
-    
+
     public int getVisibilityTimeoutSeconds() {
         return visibilityTimeoutSeconds;
     }
-    
+
     public int getWaitTimeSeconds() {
         return waitTimeSeconds;
     }
-    
+
     public int getMaxNumberOfMessages() {
         return maxNumberOfMessages;
     }
-    
+
     public int getMaxProcessingTimeSeconds() {
         return maxProcessingTimeSeconds;
     }
-    
+
     public String getTempDirectory() {
         return tempDirectory;
     }
-    
+
     @Override
     public String toString() {
         return "WorkerConfig{" +
@@ -114,4 +117,3 @@ public class WorkerConfig {
                 '}';
     }
 }
-
