@@ -120,6 +120,10 @@ public class LocalAppConfig {
         return visibilityTimeoutSeconds;
     }
 
+    public int getVisibilityTimeout() {
+        return visibilityTimeoutSeconds;
+    }
+
     public int getWaitTimeSeconds() {
         return waitTimeSeconds;
     }

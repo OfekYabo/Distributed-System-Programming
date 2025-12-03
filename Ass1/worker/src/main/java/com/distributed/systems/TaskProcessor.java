@@ -1,6 +1,7 @@
 package com.distributed.systems;
 
-import com.distributed.systems.model.WorkerTaskMessage;
+import com.distributed.systems.shared.model.WorkerTaskMessage;
+import com.distributed.systems.shared.service.S3Service;
 import edu.stanford.nlp.ling.HasWord;
 import edu.stanford.nlp.ling.TaggedWord;
 import edu.stanford.nlp.parser.lexparser.LexicalizedParser;
@@ -16,8 +17,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collection;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,26 +27,26 @@ import java.util.concurrent.TimeUnit;
  * Downloads files, performs parsing, and handles errors
  */
 public class TaskProcessor {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(TaskProcessor.class);
-    
+
     private final WorkerConfig config;
-    private final S3Uploader s3Uploader;
-    
+    private final S3Service s3Service;
+
     // Stanford NLP models - initialized lazily and reused
     private static MaxentTagger posTagger;
     private static LexicalizedParser constituencyParser;
     private static MaxentTagger dependencyTagger;
     private static DependencyParser dependencyParser;
-    
-    public TaskProcessor(WorkerConfig config, S3Uploader s3Uploader) {
+
+    public TaskProcessor(WorkerConfig config, S3Service s3Service) {
         this.config = config;
-        this.s3Uploader = s3Uploader;
-        
+        this.s3Service = s3Service;
+
         // Ensure temp directory exists
         createTempDirectory();
     }
-    
+
     /**
      * Creates the temporary directory if it doesn't exist
      */
@@ -60,7 +62,7 @@ public class TaskProcessor {
             throw new RuntimeException("Failed to create temp directory", e);
         }
     }
-    
+
     /**
      * Processes a task: downloads file, performs parsing, uploads result
      * 
@@ -71,21 +73,24 @@ public class TaskProcessor {
     public String processTask(WorkerTaskMessage.TaskData taskData) throws Exception {
         String url = taskData.getUrl();
         String parsingMethod = taskData.getParsingMethod();
-        
+
         logger.info("Processing task: URL={}, Method={}", url, parsingMethod);
-        
+
         // Download the file
         File downloadedFile = downloadFile(url);
-        
+
         try {
-            // Parse the file (placeholder for now)
+            // Parse the file
             File parsedFile = parseFile(downloadedFile, parsingMethod);
-            
+
             try {
                 // Upload to S3
-                String s3Url = s3Uploader.uploadFile(parsedFile, url, parsingMethod);
+                String s3Key = generateS3Key(url, parsingMethod);
+                s3Service.uploadFile(parsedFile.toPath(), s3Key);
+
+                String s3Url = "s3://" + config.getS3BucketName() + "/" + s3Key;
                 logger.info("Task processed successfully. S3 URL: {}", s3Url);
-                
+
                 return s3Url;
             } finally {
                 // Clean up parsed file
@@ -100,7 +105,42 @@ public class TaskProcessor {
             }
         }
     }
-    
+
+    /**
+     * Generates a unique S3 key for the output file
+     * Format: results/{timestamp}/{uuid}/{filename}
+     */
+    private String generateS3Key(String originalUrl, String parsingMethod) {
+        String timestamp = String.valueOf(Instant.now().toEpochMilli());
+        String uuid = UUID.randomUUID().toString();
+        String filename = extractFilename(originalUrl);
+
+        return String.format("results/%s/%s/%s-%s.txt",
+                timestamp, uuid, parsingMethod, filename);
+    }
+
+    /**
+     * Extracts filename from URL
+     */
+    private String extractFilename(String url) {
+        try {
+            String[] parts = url.split("/");
+            String filename = parts[parts.length - 1];
+
+            // Remove extension if present
+            if (filename.contains(".")) {
+                filename = filename.substring(0, filename.lastIndexOf('.'));
+            }
+
+            // Remove special characters
+            filename = filename.replaceAll("[^a-zA-Z0-9-_]", "_");
+
+            return filename.isEmpty() ? "output" : filename;
+        } catch (Exception e) {
+            return "output";
+        }
+    }
+
     /**
      * Downloads a file from URL using wget
      * 
@@ -111,9 +151,9 @@ public class TaskProcessor {
     private File downloadFile(String url) throws Exception {
         String filename = "input_" + System.currentTimeMillis() + ".txt";
         File outputFile = new File(config.getTempDirectory(), filename);
-        
+
         logger.info("Downloading file from URL: {}", url);
-        
+
         try {
             // Use wget to download the file
             ProcessBuilder processBuilder = new ProcessBuilder(
@@ -121,12 +161,11 @@ public class TaskProcessor {
                     "-O", outputFile.getAbsolutePath(),
                     "--timeout=30",
                     "--tries=3",
-                    url
-            );
-            
+                    url);
+
             processBuilder.redirectErrorStream(true);
             Process process = processBuilder.start();
-            
+
             // Read output for logging
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()))) {
@@ -135,29 +174,29 @@ public class TaskProcessor {
                     logger.debug("wget: {}", line);
                 }
             }
-            
+
             // Wait for completion with timeout
             boolean completed = process.waitFor(60, TimeUnit.SECONDS);
-            
+
             if (!completed) {
                 process.destroyForcibly();
                 throw new Exception("Download timeout exceeded");
             }
-            
+
             int exitCode = process.exitValue();
             if (exitCode != 0) {
                 throw new Exception("wget failed with exit code: " + exitCode);
             }
-            
+
             if (!outputFile.exists() || outputFile.length() == 0) {
                 throw new Exception("Downloaded file is empty or does not exist");
             }
-            
-            logger.info("File downloaded successfully: {} ({} bytes)", 
+
+            logger.info("File downloaded successfully: {} ({} bytes)",
                     outputFile.getName(), outputFile.length());
-            
+
             return outputFile;
-            
+
         } catch (Exception e) {
             // Clean up on failure
             if (outputFile.exists()) {
@@ -166,11 +205,11 @@ public class TaskProcessor {
             throw new Exception("Failed to download file from URL: " + url + " - " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Parses a text file using Stanford NLP
      * 
-     * @param inputFile The file to parse
+     * @param inputFile     The file to parse
      * @param parsingMethod The parsing method (POS, CONSTITUENCY, DEPENDENCY)
      * @return The parsed file
      * @throws Exception if parsing fails
@@ -178,9 +217,9 @@ public class TaskProcessor {
     private File parseFile(File inputFile, String parsingMethod) throws Exception {
         String outputFilename = "parsed_" + System.currentTimeMillis() + ".txt";
         File outputFile = new File(config.getTempDirectory(), outputFilename);
-        
+
         logger.info("Parsing file with method: {}", parsingMethod);
-        
+
         try {
             switch (parsingMethod) {
                 case "POS":
@@ -195,10 +234,10 @@ public class TaskProcessor {
                 default:
                     throw new Exception("Unknown parsing method: " + parsingMethod);
             }
-            
+
             logger.info("File parsed successfully with method {}: {}", parsingMethod, outputFile.getName());
             return outputFile;
-            
+
         } catch (Exception e) {
             // Clean up on failure
             if (outputFile.exists()) {
@@ -207,36 +246,37 @@ public class TaskProcessor {
             throw new Exception("Failed to parse file with method " + parsingMethod + ": " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Performs POS (Part-of-Speech) tagging on the input file
      */
     private void performPosTagging(File inputFile, File outputFile) throws Exception {
         logger.info("Performing POS tagging");
-        
+
         // Initialize POS tagger lazily
         if (posTagger == null) {
             synchronized (TaskProcessor.class) {
                 if (posTagger == null) {
                     logger.info("Loading POS tagger model...");
-                    posTagger = new MaxentTagger("edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger");
+                    posTagger = new MaxentTagger(
+                            "edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger");
                     logger.info("POS tagger model loaded");
                 }
             }
         }
-        
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
             // Process sentence by sentence for better memory efficiency
             DocumentPreprocessor dp = new DocumentPreprocessor(new FileReader(inputFile));
-            
+
             for (List<HasWord> sentence : dp) {
                 if (sentence.isEmpty()) {
                     continue;
                 }
-                
+
                 try {
                     List<TaggedWord> taggedSentence = posTagger.tagSentence(sentence);
-                    
+
                     for (TaggedWord word : taggedSentence) {
                         writer.write(word.word() + "/" + word.tag() + " ");
                     }
@@ -248,35 +288,38 @@ public class TaskProcessor {
             }
         }
     }
-    
+
     /**
-     * Performs constituency parsing on the input file using LexicalizedParser (PCFG)
+     * Performs constituency parsing on the input file using LexicalizedParser
+     * (PCFG)
      */
     private void performConstituencyParsing(File inputFile, File outputFile) throws Exception {
         logger.info("Performing constituency parsing");
-        
+
         // Initialize parser lazily
         if (constituencyParser == null) {
             synchronized (TaskProcessor.class) {
                 if (constituencyParser == null) {
                     logger.info("Loading constituency parser model...");
-                    constituencyParser = LexicalizedParser.loadModel("edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz");
+                    constituencyParser = LexicalizedParser
+                            .loadModel("edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz");
                     logger.info("Constituency parser model loaded");
                 }
             }
         }
-        
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
             // Process sentence by sentence for better memory efficiency
             DocumentPreprocessor dp = new DocumentPreprocessor(new FileReader(inputFile));
-            
+
             for (List<HasWord> sentence : dp) {
                 if (sentence.isEmpty()) {
                     continue;
                 }
-                
+
                 try {
-                    // Parse the sentence directly (LexicalizedParser handles tokenization internally)
+                    // Parse the sentence directly (LexicalizedParser handles tokenization
+                    // internally)
                     Tree parseTree = constituencyParser.apply(sentence);
                     writer.write(parseTree.toString());
                     writer.write("\n\n");
@@ -287,20 +330,22 @@ public class TaskProcessor {
             }
         }
     }
-    
+
     /**
-     * Performs dependency parsing on the input file using Neural Network Dependency Parser
+     * Performs dependency parsing on the input file using Neural Network Dependency
+     * Parser
      * Note: DependencyParser requires pre-tagged text
      */
     private void performDependencyParsing(File inputFile, File outputFile) throws Exception {
         logger.info("Performing dependency parsing");
-        
+
         // Initialize tagger and parser lazily
         if (dependencyTagger == null || dependencyParser == null) {
             synchronized (TaskProcessor.class) {
                 if (dependencyTagger == null) {
                     logger.info("Loading dependency tagger model...");
-                    dependencyTagger = new MaxentTagger("edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger");
+                    dependencyTagger = new MaxentTagger(
+                            "edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger");
                     logger.info("Dependency tagger model loaded");
                 }
                 if (dependencyParser == null) {
@@ -310,22 +355,22 @@ public class TaskProcessor {
                 }
             }
         }
-        
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
             // Process sentence by sentence for better memory efficiency
             DocumentPreprocessor dp = new DocumentPreprocessor(new FileReader(inputFile));
-            
+
             for (List<HasWord> sentence : dp) {
                 if (sentence.isEmpty()) {
                     continue;
                 }
-                
+
                 try {
                     // First tag the sentence
                     List<TaggedWord> tagged = dependencyTagger.tagSentence(sentence);
                     // Then parse the tagged sentence
                     GrammaticalStructure gs = dependencyParser.predict(tagged);
-                    
+
                     // Write the dependencies
                     writer.write(gs.toString());
                     writer.write("\n\n");
@@ -336,14 +381,13 @@ public class TaskProcessor {
             }
         }
     }
-    
+
     /**
      * Validates the parsing method
      */
     public static boolean isValidParsingMethod(String method) {
-        return "POS".equals(method) || 
-               "CONSTITUENCY".equals(method) || 
-               "DEPENDENCY".equals(method);
+        return "POS".equals(method) ||
+                "CONSTITUENCY".equals(method) ||
+                "DEPENDENCY".equals(method);
     }
 }
-

@@ -1,6 +1,6 @@
 package com.distributed.systems;
 
-import com.distributed.systems.service.S3Service;
+import com.distributed.systems.shared.service.S3Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,21 +10,21 @@ import java.util.List;
  * Generates HTML summary files for completed jobs
  */
 public class HtmlSummaryGenerator {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(HtmlSummaryGenerator.class);
-    
+
     private final S3Service s3Service;
-    
+
     public HtmlSummaryGenerator(S3Service s3Service) {
         this.s3Service = s3Service;
     }
-    
+
     /**
      * Generates an HTML summary from task results
      */
     public String generateSummary(List<JobTracker.TaskResult> results) {
         StringBuilder html = new StringBuilder();
-        
+
         html.append("<!DOCTYPE html>\n");
         html.append("<html lang=\"en\">\n");
         html.append("<head>\n");
@@ -82,25 +82,26 @@ public class HtmlSummaryGenerator {
         html.append("</head>\n");
         html.append("<body>\n");
         html.append("  <h1>Text Analysis Results</h1>\n");
-        
+
         // Statistics
         long successCount = results.stream().filter(r -> r.success).count();
         long errorCount = results.size() - successCount;
-        
+
         html.append("  <div class=\"stats\">\n");
         html.append("    <strong>Total: ").append(results.size()).append("</strong> | ");
         html.append("    <span style=\"color: #4CAF50;\">Success: ").append(successCount).append("</span> | ");
         html.append("    <span style=\"color: #f44336;\">Errors: ").append(errorCount).append("</span>\n");
         html.append("  </div>\n");
-        
+
         // Results
         for (JobTracker.TaskResult result : results) {
             if (result.success) {
                 // Generate presigned URL for public access
-                String presignedUrl = s3Service.generatePresignedUrlFromS3Url(result.outputS3Url);
-                
+                String presignedUrl = s3Service.generatePresignedUrl(result.outputS3Url);
+
                 html.append("  <div class=\"result success\">\n");
-                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod)).append("</span>: ");
+                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod))
+                        .append("</span>: ");
                 html.append("    <a href=\"").append(escapeHtml(result.url)).append("\" target=\"_blank\">");
                 html.append(escapeHtml(result.url)).append("</a> ");
                 html.append("    <a href=\"").append(escapeHtml(presignedUrl)).append("\" target=\"_blank\">");
@@ -108,23 +109,24 @@ public class HtmlSummaryGenerator {
                 html.append("  </div>\n");
             } else {
                 html.append("  <div class=\"result error\">\n");
-                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod)).append("</span>: ");
+                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod))
+                        .append("</span>: ");
                 html.append("    <a href=\"").append(escapeHtml(result.url)).append("\" target=\"_blank\">");
                 html.append(escapeHtml(result.url)).append("</a> ");
                 html.append("    <span class=\"error-msg\">").append(escapeHtml(result.error)).append("</span>\n");
                 html.append("  </div>\n");
             }
         }
-        
+
         html.append("</body>\n");
         html.append("</html>\n");
-        
-        logger.info("Generated HTML summary with {} results ({} success, {} errors)", 
+
+        logger.info("Generated HTML summary with {} results ({} success, {} errors)",
                 results.size(), successCount, errorCount);
-        
+
         return html.toString();
     }
-    
+
     /**
      * Escapes HTML special characters
      */
@@ -140,5 +142,3 @@ public class HtmlSummaryGenerator {
                 .replace("'", "&#39;");
     }
 }
-
-

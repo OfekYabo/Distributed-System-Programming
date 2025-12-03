@@ -148,6 +148,10 @@ public class ManagerConfig {
         return visibilityTimeoutSeconds;
     }
 
+    public int getVisibilityTimeout() {
+        return visibilityTimeoutSeconds;
+    }
+
     public int getWaitTimeSeconds() {
         return waitTimeSeconds;
     }
