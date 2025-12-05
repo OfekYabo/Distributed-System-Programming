@@ -5,10 +5,8 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 import java.io.File;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -45,7 +43,7 @@ public class S3Uploader {
                     .contentType("text/plain")
                     .build();
             
-            PutObjectResponse response = s3Client.putObject(putRequest, 
+            s3Client.putObject(putRequest, 
                     RequestBody.fromFile(file.toPath()));
             
             String s3Url = String.format("s3://%s/%s", config.getS3BucketName(), s3Key);
