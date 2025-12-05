@@ -197,16 +197,27 @@ public class Manager {
         logger.info("Terminating all workers...");
         workerScaler.terminateAllWorkers();
         
-        // Close services
-        closeServices();
+        // Close services (except EC2 service which we need for self-termination)
+        closeSqsAndS3Services();
         
         logger.info("=== Manager Stopped ===");
+        
+        // Self-terminate the manager's EC2 instance
+        logger.info("Self-terminating manager EC2 instance...");
+        ec2Service.terminateSelf();
+        
+        // Close EC2 service last
+        try {
+            ec2Service.close();
+        } catch (Exception e) {
+            logger.error("Error closing Ec2Service: {}", e.getMessage());
+        }
     }
     
     /**
-     * Closes all services
+     * Closes SQS and S3 services (EC2 service is closed separately after self-termination)
      */
-    private void closeServices() {
+    private void closeSqsAndS3Services() {
         try {
             sqsService.close();
         } catch (Exception e) {
@@ -217,12 +228,6 @@ public class Manager {
             s3Service.close();
         } catch (Exception e) {
             logger.error("Error closing S3Service: {}", e.getMessage());
-        }
-        
-        try {
-            ec2Service.close();
-        } catch (Exception e) {
-            logger.error("Error closing Ec2Service: {}", e.getMessage());
         }
     }
     

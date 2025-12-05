@@ -7,8 +7,14 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -233,6 +239,60 @@ public class Ec2Service implements AutoCloseable {
         }
         
         logger.warn("Timeout waiting for workers to terminate");
+    }
+    
+    /**
+     * Gets the current EC2 instance ID from the instance metadata service (IMDSv2)
+     * @return The instance ID, or null if not running on EC2 or unable to retrieve
+     */
+    public String getCurrentInstanceId() {
+        try {
+            // IMDSv2: First get a token
+            URL tokenUrl = URI.create("http://169.254.169.254/latest/api/token").toURL();
+            HttpURLConnection tokenConn = (HttpURLConnection) tokenUrl.openConnection();
+            tokenConn.setRequestMethod("PUT");
+            tokenConn.setRequestProperty("X-aws-ec2-metadata-token-ttl-seconds", "21600");
+            tokenConn.setConnectTimeout(1000);
+            tokenConn.setReadTimeout(1000);
+            
+            String token;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(tokenConn.getInputStream()))) {
+                token = reader.readLine();
+            }
+            
+            // Use the token to get instance ID
+            URL instanceIdUrl = URI.create("http://169.254.169.254/latest/meta-data/instance-id").toURL();
+            HttpURLConnection idConn = (HttpURLConnection) instanceIdUrl.openConnection();
+            idConn.setRequestMethod("GET");
+            idConn.setRequestProperty("X-aws-ec2-metadata-token", token);
+            idConn.setConnectTimeout(1000);
+            idConn.setReadTimeout(1000);
+            
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(idConn.getInputStream()))) {
+                String instanceId = reader.readLine();
+                logger.debug("Current instance ID: {}", instanceId);
+                return instanceId;
+            }
+            
+        } catch (Exception e) {
+            logger.warn("Unable to retrieve instance ID from metadata service (not running on EC2?): {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Terminates the current EC2 instance (self-termination)
+     * Used by Manager to terminate itself after idle timeout
+     */
+    public void terminateSelf() {
+        String instanceId = getCurrentInstanceId();
+        if (instanceId == null) {
+            logger.warn("Cannot self-terminate: not running on EC2 or unable to get instance ID");
+            return;
+        }
+        
+        logger.info("Self-terminating instance: {}", instanceId);
+        terminateInstances(Collections.singletonList(instanceId));
     }
     
     @Override
