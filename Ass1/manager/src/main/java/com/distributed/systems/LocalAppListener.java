@@ -174,6 +174,15 @@ public class LocalAppListener implements Runnable {
             // Delete the original message
             sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
 
+            // Cleanup: Delete the input file from S3
+            logger.info("Cleaning up: Deleting input file {} from S3...", inputFileS3Key);
+            try {
+                s3Service.deleteFile(inputFileS3Key);
+                logger.info("Input file deleted: {}", inputFileS3Key);
+            } catch (Exception e) {
+                logger.warn("Failed to delete input file {}: {}", inputFileS3Key, e.getMessage());
+            }
+
         } catch (Exception e) {
             logger.error("Failed to process new task {}: {}", inputFileS3Key, e.getMessage());
             // Don't delete - will retry after visibility timeout

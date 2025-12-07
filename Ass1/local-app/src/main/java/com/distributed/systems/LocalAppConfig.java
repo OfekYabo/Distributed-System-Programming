@@ -14,6 +14,8 @@ public class LocalAppConfig {
 
     // S3 configuration
     private final String s3BucketName;
+    private final String s3InputPrefix;
+    private final String s3ManagerOutputPrefix;
 
     // AWS Region
     private final String awsRegion;
@@ -58,6 +60,10 @@ public class LocalAppConfig {
         this.waitTimeSeconds = getRequiredIntEnv(dotenv, "WAIT_TIME_SECONDS");
         this.maxNumberOfMessages = getRequiredIntEnv(dotenv, "MAX_MESSAGES");
 
+        // S3 Folder Prefixes
+        this.s3InputPrefix = getOptionalEnv(dotenv, "S3_INPUT_PREFIX", "input-local-apps-tasks");
+        this.s3ManagerOutputPrefix = getOptionalEnv(dotenv, "S3_MANAGER_OUTPUT_PREFIX", "manager-output");
+
         // Polling configuration
         this.pollIntervalSeconds = getRequiredIntEnv(dotenv, "POLL_INTERVAL_SECONDS");
     }
@@ -79,6 +85,11 @@ public class LocalAppConfig {
         }
     }
 
+    private String getOptionalEnv(Dotenv dotenv, String envVar, String defaultValue) {
+        String value = dotenv.get(envVar);
+        return value != null && !value.isEmpty() ? value : defaultValue;
+    }
+
     // Getters
     public String getLocalAppInputQueue() {
         return localAppInputQueue;
@@ -90,6 +101,14 @@ public class LocalAppConfig {
 
     public String getS3BucketName() {
         return s3BucketName;
+    }
+
+    public String getS3InputPrefix() {
+        return s3InputPrefix;
+    }
+
+    public String getS3ManagerOutputPrefix() {
+        return s3ManagerOutputPrefix;
     }
 
     public String getAwsRegion() {

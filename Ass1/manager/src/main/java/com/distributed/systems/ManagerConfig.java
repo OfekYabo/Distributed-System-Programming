@@ -39,6 +39,9 @@ public class ManagerConfig {
     private final int idleTimeoutMinutes;
     private final int scalingIntervalSeconds;
 
+    // S3 Folder Prefixes
+    private final String s3ManagerOutputPrefix;
+
     public ManagerConfig() {
         Dotenv dotenv = Dotenv.load();
 
@@ -71,6 +74,9 @@ public class ManagerConfig {
         // Manager behavior
         this.idleTimeoutMinutes = getRequiredIntEnv(dotenv, "IDLE_TIMEOUT_MINUTES");
         this.scalingIntervalSeconds = getRequiredIntEnv(dotenv, "SCALING_INTERVAL_SECONDS");
+
+        // S3 Folder Prefixes
+        this.s3ManagerOutputPrefix = getOptionalEnv(dotenv, "S3_MANAGER_OUTPUT_PREFIX", "manager-output");
     }
 
     private String getRequiredEnv(Dotenv dotenv, String envVar) {
@@ -166,6 +172,10 @@ public class ManagerConfig {
 
     public int getScalingIntervalSeconds() {
         return scalingIntervalSeconds;
+    }
+
+    public String getS3ManagerOutputPrefix() {
+        return s3ManagerOutputPrefix;
     }
 
     @Override

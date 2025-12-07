@@ -235,7 +235,7 @@ public class LocalApp {
 
     private void uploadInputFile() {
         Path inputPath = Paths.get(inputFileName);
-        inputS3Key = String.format("inputs/%s/input.txt", jobId);
+        inputS3Key = String.format("%s/%s/input.txt", config.getS3InputPrefix(), jobId);
         s3Service.uploadFile(inputPath, inputS3Key);
         logger.info("Input file uploaded to S3: {}", inputS3Key);
     }
@@ -289,6 +289,15 @@ public class LocalApp {
         Path outputPath = Paths.get(outputFileName);
         s3Service.downloadToFile(summaryS3Key, outputPath);
         logger.info("Output file saved to: {}", outputFileName);
+
+        // Cleanup: Delete the summary file from S3
+        logger.info("Cleaning up: Deleting summary file from S3...");
+        try {
+            s3Service.deleteFile(summaryS3Key);
+            logger.info("Summary file deleted: {}", summaryS3Key);
+        } catch (Exception e) {
+            logger.warn("Failed to delete summary file: {}", e.getMessage());
+        }
     }
 
     private void sendTerminateMessage() {
@@ -339,8 +348,8 @@ public class LocalApp {
             return;
         }
         if (n <= 0) {
-             System.err.println("n must be positive");
-             System.exit(1);
+            System.err.println("n must be positive");
+            System.exit(1);
         }
         boolean terminate = args.length > 3 && "terminate".equalsIgnoreCase(args[3]);
 

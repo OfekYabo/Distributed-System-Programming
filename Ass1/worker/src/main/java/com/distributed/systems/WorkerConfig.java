@@ -27,6 +27,9 @@ public class WorkerConfig {
     private final int maxProcessingTimeSeconds;
     private final String tempDirectory;
 
+    // S3 Folder Prefixes
+    private final String s3WorkerResultsPrefix;
+
     public WorkerConfig() {
         Dotenv dotenv = Dotenv.load();
 
@@ -47,6 +50,9 @@ public class WorkerConfig {
         // Processing settings
         this.maxProcessingTimeSeconds = getRequiredIntEnv(dotenv, "MAX_PROCESSING_TIME_SECONDS");
         this.tempDirectory = getRequiredEnv(dotenv, "TEMP_DIR");
+
+        // S3 Folder Prefixes
+        this.s3WorkerResultsPrefix = getOptionalEnv(dotenv, "S3_WORKER_RESULTS_PREFIX", "workers-results");
     }
 
     private String getRequiredEnv(Dotenv dotenv, String envVar) {
@@ -55,6 +61,11 @@ public class WorkerConfig {
             throw new RuntimeException("Missing required environment variable: " + envVar);
         }
         return value;
+    }
+
+    private String getOptionalEnv(Dotenv dotenv, String envVar, String defaultValue) {
+        String value = dotenv.get(envVar);
+        return value != null && !value.isEmpty() ? value : defaultValue;
     }
 
     private int getRequiredIntEnv(Dotenv dotenv, String envVar) {
@@ -100,6 +111,10 @@ public class WorkerConfig {
 
     public String getTempDirectory() {
         return tempDirectory;
+    }
+
+    public String getS3WorkerResultsPrefix() {
+        return s3WorkerResultsPrefix;
     }
 
     @Override

@@ -125,7 +125,8 @@ public class WorkerResultsListener implements Runnable {
             String html = htmlGenerator.generateSummary(jobInfo.getResults());
 
             // Upload to S3
-            String summaryKey = "outputs/summary-" + System.currentTimeMillis() + ".html";
+            String summaryKey = String.format("%s/summary-%d.html",
+                    config.getS3ManagerOutputPrefix(), System.currentTimeMillis());
             String summaryS3Key = s3Service.uploadString(summaryKey, html, "text/html");
 
             logger.info("Uploaded summary for job {} to {}", inputFileS3Key, summaryS3Key);
@@ -137,6 +138,24 @@ public class WorkerResultsListener implements Runnable {
             sqsService.sendMessage(config.getLocalAppOutputQueue(), response);
 
             logger.info("Sent completion message to local app for job {}", inputFileS3Key);
+
+            // Cleanup: Delete worker result files from S3
+            logger.info("Cleaning up: Deleting worker result files for job {}...", inputFileS3Key);
+            for (JobTracker.TaskResult result : jobInfo.getResults()) {
+                if (result.isSuccess() && result.getOutputUrl() != null) {
+                    // Extract key from s3://bucket/key format
+                    String s3Url = result.getOutputUrl();
+                    String bucketPrefix = "s3://" + config.getS3BucketName() + "/";
+                    if (s3Url.startsWith(bucketPrefix)) {
+                        String key = s3Url.substring(bucketPrefix.length());
+                        try {
+                            s3Service.deleteFile(key);
+                        } catch (Exception e) {
+                            logger.warn("Failed to delete result file {}: {}", key, e.getMessage());
+                        }
+                    }
+                }
+            }
 
             // Remove the job from tracker
             jobTracker.removeJob(inputFileS3Key);

@@ -25,6 +25,8 @@ public class SqsService implements AutoCloseable {
     public SqsService(SqsClient sqsClient) {
         this.sqsClient = sqsClient;
         this.objectMapper = new ObjectMapper();
+        this.objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
+                false);
         this.queueUrlCache = new ConcurrentHashMap<>();
     }
 

@@ -106,6 +106,24 @@ public class S3Service implements AutoCloseable {
     }
 
     /**
+     * Deletes a file from S3.
+     */
+    public void deleteFile(String key) {
+        try {
+            DeleteObjectRequest request = DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+
+            s3Client.deleteObject(request);
+            logger.info("Deleted s3://{}/{}", bucketName, key);
+        } catch (Exception e) {
+            logger.error("Failed to delete file: s3://{}/{} - {}", bucketName, key, e.getMessage());
+            throw new RuntimeException("Failed to delete file", e);
+        }
+    }
+
+    /**
      * Ensures the S3 bucket exists, creating it if necessary.
      */
     public void ensureBucketExists() {

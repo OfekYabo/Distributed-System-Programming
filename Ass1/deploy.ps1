@@ -72,6 +72,20 @@ try {
     Write-Host "Bucket created." -ForegroundColor Green
 }
 
+# Build Shared Lib
+Write-Host "`n================================================" -ForegroundColor Cyan
+Write-Host "  Building Shared Lib" -ForegroundColor Cyan
+Write-Host "================================================"
+Push-Location shared-lib
+cmd /c "mvn clean install -DskipTests -q"
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Shared Lib built and installed successfully." -ForegroundColor Green
+} else {
+    Write-Host "Shared Lib build failed!" -ForegroundColor Red
+    exit 1
+}
+Pop-Location
+
 # Build and Deploy Manager
 Write-Host "`n================================================" -ForegroundColor Cyan
 Write-Host "  Building Manager" -ForegroundColor Cyan
@@ -103,6 +117,22 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Uploaded worker.jar" -ForegroundColor Green
 } else {
     Write-Host "Worker build failed!" -ForegroundColor Red
+    Pop-Location
+    exit 1
+}
+Pop-Location
+
+# Build Local App
+Write-Host "`n================================================" -ForegroundColor Cyan
+Write-Host "  Building Local App" -ForegroundColor Cyan
+Write-Host "================================================"
+Push-Location local-app
+cmd /c "mvn clean package -DskipTests -q"
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Local App built successfully." -ForegroundColor Green
+    # Local App is not uploaded to S3, just built for local usage
+} else {
+    Write-Host "Local App build failed!" -ForegroundColor Red
     Pop-Location
     exit 1
 }

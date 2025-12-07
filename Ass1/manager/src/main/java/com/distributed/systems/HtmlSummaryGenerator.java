@@ -96,8 +96,15 @@ public class HtmlSummaryGenerator {
         // Results
         for (JobTracker.TaskResult result : results) {
             if (result.success) {
+                // Extract key from s3:// URL if necessary
+                String key = result.outputS3Url;
+                String bucketAgnosticPrefix = "s3://" + s3Service.getBucketName() + "/";
+                if (key != null && key.startsWith(bucketAgnosticPrefix)) {
+                    key = key.substring(bucketAgnosticPrefix.length());
+                }
+
                 // Generate presigned URL for public access
-                String presignedUrl = s3Service.generatePresignedUrl(result.outputS3Url);
+                String presignedUrl = s3Service.generatePresignedUrl(key);
 
                 html.append("  <div class=\"result success\">\n");
                 html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod))

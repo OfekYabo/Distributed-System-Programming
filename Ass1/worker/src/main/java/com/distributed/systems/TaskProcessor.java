@@ -108,14 +108,15 @@ public class TaskProcessor {
 
     /**
      * Generates a unique S3 key for the output file
-     * Format: results/{timestamp}/{uuid}/{filename}
+     * Format: worker-results/{timestamp}/{uuid}/{filename}
      */
     private String generateS3Key(String originalUrl, String parsingMethod) {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
         String uuid = UUID.randomUUID().toString();
         String filename = extractFilename(originalUrl);
 
-        return String.format("results/%s/%s/%s-%s.txt",
+        return String.format("%s/%s/%s/%s-%s.txt",
+                config.getS3WorkerResultsPrefix(),
                 timestamp, uuid, parsingMethod, filename);
     }
 
