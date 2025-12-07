@@ -1,9 +1,27 @@
 #!/bin/bash
 set -e
 
-# Configuration
-AWS_REGION="${AWS_REGION:-us-east-1}"
-S3_BUCKET="${S3_BUCKET:-ds-assignment-1}"
+# Check for .env file
+if [ ! -f .env ]; then
+    echo "Error: .env file not found!"
+    echo "Please create a .env file with S3_BUCKET_NAME and AWS_REGION."
+    exit 1
+fi
+
+echo "Loading configuration from .env..."
+# Grep the values from .env, handling potential Windows line endings
+S3_BUCKET=$(grep "^S3_BUCKET_NAME=" .env | cut -d '=' -f2 | tr -d '\r')
+AWS_REGION=$(grep "^AWS_REGION=" .env | cut -d '=' -f2 | tr -d '\r')
+
+if [ -z "$S3_BUCKET" ]; then
+    echo "Error: S3_BUCKET_NAME not defined in .env"
+    exit 1
+fi
+
+if [ -z "$AWS_REGION" ]; then
+    echo "Error: AWS_REGION not defined in .env"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
