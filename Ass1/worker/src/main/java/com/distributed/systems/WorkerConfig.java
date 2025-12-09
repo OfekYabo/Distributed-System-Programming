@@ -30,6 +30,9 @@ public class WorkerConfig {
     // S3 Folder Prefixes
     private final String s3WorkerResultsPrefix;
 
+    // NLP Configuration
+    private final int maxSentenceLength;
+
     public WorkerConfig() {
         Dotenv dotenv = Dotenv.load();
 
@@ -53,6 +56,9 @@ public class WorkerConfig {
 
         // S3 Folder Prefixes
         this.s3WorkerResultsPrefix = getOptionalEnv(dotenv, "S3_WORKER_RESULTS_PREFIX", "workers-results");
+
+        // NLP Configuration
+        this.maxSentenceLength = Integer.parseInt(getOptionalEnv(dotenv, "MAX_SENTENCE_LENGTH", "100"));
     }
 
     private String getRequiredEnv(Dotenv dotenv, String envVar) {
@@ -115,6 +121,10 @@ public class WorkerConfig {
 
     public String getS3WorkerResultsPrefix() {
         return s3WorkerResultsPrefix;
+    }
+
+    public int getMaxSentenceLength() {
+        return maxSentenceLength;
     }
 
     @Override
