@@ -1,5 +1,6 @@
 package com.distributed.systems;
 
+import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.LocalAppResponse;
 import com.distributed.systems.shared.model.WorkerTaskResult;
 import com.distributed.systems.shared.service.S3Service;
@@ -19,25 +20,47 @@ public class WorkerResultsListener implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkerResultsListener.class);
 
-    private final ManagerConfig config;
+    // Config Keys
+    private static final String WORKER_OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
+    private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
+    private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
+    private static final String S3_PREFIX_KEY = "S3_MANAGER_OUTPUT_PREFIX";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
+
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final JobTracker jobTracker;
     private final HtmlSummaryGenerator htmlGenerator;
     private final AtomicBoolean running;
 
-    public WorkerResultsListener(ManagerConfig config,
+    // Config Values
+    private final String workerOutputQueue;
+    private final int waitTimeSeconds;
+    private final int visibilityTimeout;
+    private final String s3ManagerPrefix;
+    private final String s3BucketName;
+    private final String localAppOutputQueue;
+
+    public WorkerResultsListener(AppConfig config,
             SqsService sqsService,
             S3Service s3Service,
             JobTracker jobTracker,
             HtmlSummaryGenerator htmlGenerator,
             AtomicBoolean running) {
-        this.config = config;
         this.sqsService = sqsService;
         this.s3Service = s3Service;
         this.jobTracker = jobTracker;
         this.htmlGenerator = htmlGenerator;
         this.running = running;
+
+        // Load Configuration
+        this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
+        this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
+        this.s3ManagerPrefix = config.getOptional(S3_PREFIX_KEY, "manager-output");
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
     }
 
     @Override
@@ -47,8 +70,8 @@ public class WorkerResultsListener implements Runnable {
         while (running.get()) {
             try {
                 // Poll for messages from workers
-                List<Message> messages = sqsService.receiveMessages(config.getWorkerOutputQueue(), 10,
-                        config.getWaitTimeSeconds(), config.getVisibilityTimeout());
+                List<Message> messages = sqsService.receiveMessages(workerOutputQueue, 10,
+                        waitTimeSeconds, visibilityTimeout);
 
                 for (Message message : messages) {
                     if (!running.get()) {
@@ -102,7 +125,7 @@ public class WorkerResultsListener implements Runnable {
             }
 
             // Delete the message after successful processing
-            sqsService.deleteMessage(config.getWorkerOutputQueue(), message);
+            sqsService.deleteMessage(workerOutputQueue, message);
 
         } catch (Exception e) {
             logger.error("Failed to process worker message: {}", e.getMessage());
@@ -126,7 +149,7 @@ public class WorkerResultsListener implements Runnable {
 
             // Upload to S3
             String summaryKey = String.format("%s/summary-%d.html",
-                    config.getS3ManagerOutputPrefix(), System.currentTimeMillis());
+                    s3ManagerPrefix, System.currentTimeMillis());
             String summaryS3Key = s3Service.uploadString(summaryKey, html, "text/html");
 
             logger.info("Uploaded summary for job {} to {}", inputFileS3Key, summaryS3Key);
@@ -135,7 +158,7 @@ public class WorkerResultsListener implements Runnable {
             LocalAppResponse response = new LocalAppResponse(
                     LocalAppResponse.TYPE_TASK_COMPLETE,
                     new LocalAppResponse.ResponseData(inputFileS3Key, summaryKey));
-            sqsService.sendMessage(config.getLocalAppOutputQueue(), response);
+            sqsService.sendMessage(localAppOutputQueue, response);
 
             logger.info("Sent completion message to local app for job {}", inputFileS3Key);
 
@@ -145,7 +168,7 @@ public class WorkerResultsListener implements Runnable {
                 if (result.isSuccess() && result.getOutputUrl() != null) {
                     // Extract key from s3://bucket/key format
                     String s3Url = result.getOutputUrl();
-                    String bucketPrefix = "s3://" + config.getS3BucketName() + "/";
+                    String bucketPrefix = "s3://" + s3BucketName + "/";
                     if (s3Url.startsWith(bucketPrefix)) {
                         String key = s3Url.substring(bucketPrefix.length());
                         try {

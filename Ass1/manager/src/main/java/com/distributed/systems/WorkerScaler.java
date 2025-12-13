@@ -1,5 +1,6 @@
 package com.distributed.systems;
 
+import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.service.Ec2Service;
 import com.distributed.systems.shared.service.SqsService;
 import org.slf4j.Logger;
@@ -22,30 +23,63 @@ public class WorkerScaler implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkerScaler.class);
 
-    private final ManagerConfig config;
+    // Config Keys
+    private static final String SCALING_INTERVAL_KEY = "SCALING_INTERVAL_SECONDS";
+    private static final String WORKER_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String MAX_INSTANCES_KEY = "WORKER_MAX_INSTANCES";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+
+    // AWS Config
+    private static final String AMI_ID = "WORKER_AMI_ID";
+    private static final String INSTANCE_TYPE = "WORKER_INSTANCE_TYPE";
+    private static final String IAM_ROLE = "WORKER_IAM_ROLE";
+    private static final String SECURITY_GROUP = "WORKER_SECURITY_GROUP";
+    private static final String KEY_NAME = "WORKER_KEY_NAME";
+
     private final SqsService sqsService;
     private final Ec2Service ec2Service;
     private final JobTracker jobTracker;
     private final AtomicBoolean running;
     private final AtomicBoolean terminateRequested;
 
-    public WorkerScaler(ManagerConfig config,
+    // Config Values
+    private final int scalingIntervalSeconds;
+    private final String workerQueue;
+    private final int maxWorkerInstances;
+    private final String s3BucketName;
+    private final String amiId;
+    private final String instanceType;
+    private final String iamRole;
+    private final String securityGroup;
+    private final String keyName;
+
+    public WorkerScaler(AppConfig config,
             SqsService sqsService,
             Ec2Service ec2Service,
             JobTracker jobTracker,
             AtomicBoolean running,
             AtomicBoolean terminateRequested) {
-        this.config = config;
         this.sqsService = sqsService;
         this.ec2Service = ec2Service;
         this.jobTracker = jobTracker;
         this.running = running;
         this.terminateRequested = terminateRequested;
+
+        // Load Configuration
+        this.scalingIntervalSeconds = config.getIntOptional(SCALING_INTERVAL_KEY, 10);
+        this.workerQueue = config.getString(WORKER_QUEUE_KEY);
+        this.maxWorkerInstances = config.getIntOptional(MAX_INSTANCES_KEY, 10);
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.amiId = config.getString(AMI_ID);
+        this.instanceType = config.getString(INSTANCE_TYPE);
+        this.iamRole = config.getString(IAM_ROLE);
+        this.securityGroup = config.getString(SECURITY_GROUP);
+        this.keyName = config.getString(KEY_NAME);
     }
 
     @Override
     public void run() {
-        logger.info("Started (interval: {}s)", config.getScalingIntervalSeconds());
+        logger.info("Started (interval: {}s)", scalingIntervalSeconds);
 
         while (running.get()) {
             try {
@@ -58,7 +92,7 @@ public class WorkerScaler implements Runnable {
                 }
 
                 // Sleep for the configured interval
-                sleep(config.getScalingIntervalSeconds() * 1000L);
+                sleep(scalingIntervalSeconds * 1000L);
 
             } catch (Exception e) {
                 logger.error("Error in WorkerScaler: {}", e.getMessage());
@@ -75,7 +109,7 @@ public class WorkerScaler implements Runnable {
     private void checkAndScale() {
         try {
             // Get current state
-            int pendingMessages = sqsService.getApproximateMessageCount(config.getWorkerInputQueue());
+            int pendingMessages = sqsService.getApproximateMessageCount(workerQueue);
             int currentWorkers = getRunningWorkerCount();
             int n = jobTracker.getMaxN();
 
@@ -87,7 +121,7 @@ public class WorkerScaler implements Runnable {
             int requiredWorkers = (int) Math.ceil((double) pendingMessages / n);
 
             // Cap at max instances
-            requiredWorkers = Math.min(requiredWorkers, config.getMaxWorkerInstances());
+            requiredWorkers = Math.min(requiredWorkers, maxWorkerInstances);
 
             logger.debug("Scaling check: pending={}, current={}, required={}, n={}",
                     pendingMessages, currentWorkers, requiredWorkers, n);
@@ -96,7 +130,7 @@ public class WorkerScaler implements Runnable {
             if (requiredWorkers > currentWorkers) {
                 int toCreate = Math.min(
                         requiredWorkers - currentWorkers,
-                        config.getMaxWorkerInstances() - currentWorkers);
+                        maxWorkerInstances - currentWorkers);
 
                 if (toCreate > 0) {
                     logger.info("Scaling up: creating {} worker(s) (current={}, required={})",
@@ -120,12 +154,12 @@ public class WorkerScaler implements Runnable {
                 Tag.builder().key("Name").value("TextAnalysis-Worker").build());
 
         ec2Service.launchInstance(
-                config.getWorkerAmiId(),
-                config.getWorkerInstanceType(),
+                amiId,
+                instanceType,
                 userData,
-                config.getWorkerIamRole(),
-                config.getWorkerSecurityGroup(),
-                config.getWorkerKeyName(),
+                iamRole,
+                securityGroup,
+                keyName,
                 tags,
                 count, count);
     }
@@ -150,7 +184,7 @@ public class WorkerScaler implements Runnable {
                 "dnf install -y java-11-amazon-corretto-headless\n" +
                 "# Download worker.jar from S3\n" +
                 "echo 'Downloading worker.jar from S3...'\n" +
-                "aws s3 cp s3://" + config.getS3BucketName() + "/worker.jar /home/ec2-user/worker.jar\n" +
+                "aws s3 cp s3://" + s3BucketName + "/worker.jar /home/ec2-user/worker.jar\n" +
                 "# Create .env file with configuration\n" +
                 "echo 'Creating .env file...'\n" +
                 "cat <<'EOF' > .env\n" +

@@ -1,5 +1,6 @@
 package com.distributed.systems;
 
+import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.LocalAppRequest;
 import com.distributed.systems.shared.model.WorkerTaskMessage;
 import com.distributed.systems.shared.service.S3Service;
@@ -21,7 +22,12 @@ public class LocalAppListener implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(LocalAppListener.class);
 
-    private final ManagerConfig config;
+    // Config Keys
+    private static final String INPUT_QUEUE_KEY = "LOCAL_APP_INPUT_QUEUE";
+    private static final String WORKER_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
+    private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
+
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final JobTracker jobTracker;
@@ -29,20 +35,32 @@ public class LocalAppListener implements Runnable {
     private final AtomicBoolean acceptingJobs;
     private final AtomicBoolean terminateRequested;
 
-    public LocalAppListener(ManagerConfig config,
+    // Config Values (Eagerly Loaded)
+    private final String inputQueueUrl;
+    private final String workerQueueUrl;
+    private final int waitTimeSeconds;
+    private final int visibilityTimeout;
+
+    public LocalAppListener(AppConfig config,
             SqsService sqsService,
             S3Service s3Service,
             JobTracker jobTracker,
             AtomicBoolean running,
             AtomicBoolean acceptingJobs,
             AtomicBoolean terminateRequested) {
-        this.config = config;
+        // Services
         this.sqsService = sqsService;
         this.s3Service = s3Service;
         this.jobTracker = jobTracker;
         this.running = running;
         this.acceptingJobs = acceptingJobs;
         this.terminateRequested = terminateRequested;
+
+        // Load Configuration (Fail Fast)
+        this.inputQueueUrl = config.getString(INPUT_QUEUE_KEY);
+        this.workerQueueUrl = config.getString(WORKER_QUEUE_KEY);
+        this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
     }
 
     @Override
@@ -52,8 +70,8 @@ public class LocalAppListener implements Runnable {
         while (running.get()) {
             try {
                 // Poll for messages from local applications
-                List<Message> messages = sqsService.receiveMessages(config.getLocalAppInputQueue(), 1,
-                        config.getWaitTimeSeconds(), config.getVisibilityTimeout());
+                List<Message> messages = sqsService.receiveMessages(inputQueueUrl, 1,
+                        waitTimeSeconds, visibilityTimeout);
 
                 for (Message message : messages) {
                     if (!running.get()) {
@@ -86,7 +104,7 @@ public class LocalAppListener implements Runnable {
                 handleNewTask(message, request);
             } else {
                 logger.warn("Unknown message type: {}", request.getType());
-                sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
+                sqsService.deleteMessage(inputQueueUrl, message);
             }
 
         } catch (Exception e) {
@@ -106,7 +124,7 @@ public class LocalAppListener implements Runnable {
         terminateRequested.set(true);
 
         // Delete the message
-        sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
+        sqsService.deleteMessage(inputQueueUrl, message);
 
         logger.info("Termination request processed - no longer accepting new jobs");
     }
@@ -124,7 +142,7 @@ public class LocalAppListener implements Runnable {
         LocalAppRequest.RequestData data = request.getData();
         if (data == null || data.getInputFileS3Key() == null) {
             logger.error("Invalid task request - missing data");
-            sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
+            sqsService.deleteMessage(inputQueueUrl, message);
             return;
         }
 
@@ -156,7 +174,7 @@ public class LocalAppListener implements Runnable {
 
             if (tasks.isEmpty()) {
                 logger.warn("No valid tasks found in input file: {}", inputFileS3Key);
-                sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
+                sqsService.deleteMessage(inputQueueUrl, message);
                 return;
             }
 
@@ -166,13 +184,13 @@ public class LocalAppListener implements Runnable {
             // Send tasks to worker queue
             for (JobTracker.TaskInfo task : tasks) {
                 WorkerTaskMessage taskMessage = WorkerTaskMessage.create(task.parsingMethod, task.url);
-                sqsService.sendMessage(config.getWorkerInputQueue(), taskMessage);
+                sqsService.sendMessage(workerQueueUrl, taskMessage);
             }
 
             logger.info("Sent {} tasks to worker queue for job {}", tasks.size(), inputFileS3Key);
 
             // Delete the original message
-            sqsService.deleteMessage(config.getLocalAppInputQueue(), message);
+            sqsService.deleteMessage(inputQueueUrl, message);
 
             // Cleanup: Delete the input file from S3
             logger.info("Cleaning up: Deleting input file {} from S3...", inputFileS3Key);

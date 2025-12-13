@@ -1,12 +1,15 @@
 package com.distributed.systems;
 
-import com.distributed.systems.shared.AwsClientFactory;
+import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.WorkerTaskMessage;
 import com.distributed.systems.shared.model.WorkerTaskResult;
 import com.distributed.systems.shared.service.S3Service;
 import com.distributed.systems.shared.service.SqsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.util.List;
@@ -20,25 +23,52 @@ public class Worker {
 
     private static final Logger logger = LoggerFactory.getLogger(Worker.class);
 
-    private final WorkerConfig config;
+    // Config keys
+    private static final String INPUT_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+    private static final String AWS_REGION_KEY = "AWS_REGION";
+    private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
+    private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
+    private static final String MAX_MESSAGES_KEY = "WORKER_MAX_MESSAGES";
+
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final TaskProcessor taskProcessor;
     private final AtomicBoolean running;
 
-    public Worker(WorkerConfig config) {
-        this.config = config;
+    // Config Values
+    private final String awsRegion;
+    private final String s3BucketName;
+    private final String inputQueue;
+    private final String outputQueue;
+    private final int maxMessages;
+    private final int waitTimeSeconds;
+    private final int visibilityTimeout;
+
+    public Worker(AppConfig config) {
         this.running = new AtomicBoolean(true);
 
-        // Initialize AWS clients using factory
-        String region = config.getAwsRegion();
-        this.sqsService = new SqsService(AwsClientFactory.createSqsClient(region));
-        this.s3Service = new S3Service(AwsClientFactory.createS3Client(region), config.getS3BucketName());
+        // Load Configuration
+        this.awsRegion = config.getString(AWS_REGION_KEY);
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.inputQueue = config.getString(INPUT_QUEUE_KEY);
+        this.outputQueue = config.getString(OUTPUT_QUEUE_KEY);
+        this.maxMessages = config.getIntOptional(MAX_MESSAGES_KEY, 1);
+        this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
 
-        // Initialize task processor with shared S3 service
+        // Initialize AWS clients
+        SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
+        S3Client s3Client = S3Client.builder().region(Region.of(awsRegion)).build();
+
+        this.sqsService = new SqsService(sqsClient);
+        this.s3Service = new S3Service(s3Client, s3BucketName);
+
+        // Initialize task processor
         this.taskProcessor = new TaskProcessor(config, s3Service);
 
-        logger.info("Worker initialized with config: {}", config);
+        logger.info("Worker initialized.");
     }
 
     /**
@@ -54,7 +84,8 @@ public class Worker {
         while (running.get()) {
             try {
                 // Poll for messages
-                List<Message> messages = sqsService.receiveMessages(config.getInputQueueName(), 1, 20, 20);
+                List<Message> messages = sqsService.receiveMessages(inputQueue, maxMessages, waitTimeSeconds,
+                        visibilityTimeout);
 
                 // Process each message
                 for (Message message : messages) {
@@ -90,7 +121,7 @@ public class Worker {
             // Validate message type
             if (!WorkerTaskMessage.TYPE_URL_PARSE_REQUEST.equals(taskMessage.getType())) {
                 logger.warn("Unknown message type: {}, ignoring", taskMessage.getType());
-                sqsService.deleteMessage(config.getInputQueueName(), message);
+                sqsService.deleteMessage(inputQueue, message);
                 return;
             }
 
@@ -100,7 +131,7 @@ public class Worker {
                 String error = "Invalid parsing method: " + taskData.getParsingMethod();
                 logger.error(error);
                 sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), error);
-                sqsService.deleteMessage(config.getInputQueueName(), message);
+                sqsService.deleteMessage(inputQueue, message);
                 return;
             }
 
@@ -112,7 +143,7 @@ public class Worker {
                 sendSuccessResponse(taskData.getUrl(), s3Url, taskData.getParsingMethod());
 
                 // Delete message from queue (only after successful processing)
-                sqsService.deleteMessage(config.getInputQueueName(), message);
+                sqsService.deleteMessage(inputQueue, message);
 
             } catch (Exception e) {
                 logger.error("Failed to process task", e);
@@ -122,14 +153,13 @@ public class Worker {
                 sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), errorMsg);
 
                 // Delete message from queue (we handled the error by sending error response)
-                sqsService.deleteMessage(config.getInputQueueName(), message);
+                sqsService.deleteMessage(inputQueue, message);
             }
 
         } catch (Exception e) {
             logger.error("Failed to parse or handle message", e);
             // Don't delete the message - it will become visible again after visibility
             // timeout
-            // This allows for retry in case of transient errors
         }
     }
 
@@ -138,7 +168,7 @@ public class Worker {
      */
     private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod) {
         WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod);
-        sqsService.sendMessage(config.getOutputQueueName(), result);
+        sqsService.sendMessage(outputQueue, result);
     }
 
     /**
@@ -146,7 +176,7 @@ public class Worker {
      */
     private void sendErrorResponse(String fileUrl, String parsingMethod, String error) {
         WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error);
-        sqsService.sendMessage(config.getOutputQueueName(), result);
+        sqsService.sendMessage(outputQueue, result);
     }
 
     /**
@@ -190,7 +220,7 @@ public class Worker {
         logger.info("=== Worker Application Starting ===");
 
         try {
-            WorkerConfig config = new WorkerConfig();
+            AppConfig config = new AppConfig();
             Worker worker = new Worker(config);
             worker.start();
         } catch (Exception e) {

@@ -1,10 +1,15 @@
 package com.distributed.systems;
 
-import com.distributed.systems.shared.AwsClientFactory;
+import com.distributed.systems.shared.AppConfig;
+
 import com.distributed.systems.shared.service.Ec2Service;
 import com.distributed.systems.shared.service.S3Service;
 import com.distributed.systems.shared.service.SqsService;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.sqs.SqsClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +28,36 @@ public class Manager {
 
     private static final Logger logger = LoggerFactory.getLogger(Manager.class);
 
-    private final ManagerConfig config;
+    // Config Keys
+    private static final String AWS_REGION_KEY = "AWS_REGION";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+    private static final String LOCAL_APP_INPUT_QUEUE_KEY = "LOCAL_APP_INPUT_QUEUE";
+    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
+    private static final String WORKER_INPUT_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String WORKER_OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
+    private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
+    private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
+    private static final String IDLE_TIMEOUT_KEY = "MANAGER_IDLE_TIMEOUT_MINUTES";
+
+    // Config Values (Manager's own)
+    // Wait, if I pass config to listeners, I still need it or the listeners should
+    // take individual values?
+    // Listeners take AppConfig and extract their own values (as I just
+    // implemented).
+    // So Manager still needs AppConfig to pass to listeners.
+    // But Manager's OWN configuration should be field-based.
+
+    // Config Values (Manager's own)
+    private final String awsRegion;
+    private final String s3BucketName;
+    private final String localAppInputQueue;
+    private final String localAppOutputQueue;
+    private final String workerInputQueue;
+    private final String workerOutputQueue;
+    private final int visibilityTimeout;
+    private final int waitTimeSeconds;
+    private final int idleTimeoutMinutes;
+
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final Ec2Service ec2Service;
@@ -41,20 +75,32 @@ public class Manager {
 
     private long lastActivityTime;
 
-    public Manager(ManagerConfig config) {
-        this.config = config;
+    public Manager(AppConfig config) {
         this.running = new AtomicBoolean(true);
         this.acceptingJobs = new AtomicBoolean(true);
         this.terminateRequested = new AtomicBoolean(false);
 
-        // Initialize services using AwsClientFactory
-        String region = config.getAwsRegion();
-        this.sqsService = new SqsService(AwsClientFactory.createSqsClient(region));
+        // Load Configuration (Manager's)
+        this.awsRegion = config.getString(AWS_REGION_KEY);
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
+        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
+        this.workerInputQueue = config.getString(WORKER_INPUT_QUEUE_KEY);
+        this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
+        this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
+        this.idleTimeoutMinutes = config.getIntOptional(IDLE_TIMEOUT_KEY, 30);
 
-        S3Presigner s3Presigner = AwsClientFactory.createS3Presigner(region);
-        this.s3Service = new S3Service(AwsClientFactory.createS3Client(region), s3Presigner, config.getS3BucketName());
+        // Initialize services
+        SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
+        this.sqsService = new SqsService(sqsClient);
 
-        this.ec2Service = new Ec2Service(AwsClientFactory.createEc2Client(region));
+        S3Presigner s3Presigner = S3Presigner.builder().region(Region.of(awsRegion)).build();
+        S3Client s3Client = S3Client.builder().region(Region.of(awsRegion)).build();
+        this.s3Service = new S3Service(s3Client, s3Presigner, s3BucketName);
+
+        Ec2Client ec2Client = Ec2Client.builder().region(Region.of(awsRegion)).build();
+        this.ec2Service = new Ec2Service(ec2Client);
 
         // Initialize job tracker
         this.jobTracker = new JobTracker();
@@ -74,7 +120,7 @@ public class Manager {
 
         this.lastActivityTime = System.currentTimeMillis();
 
-        logger.info("Initialized (bucket: {}, region: {})", config.getS3BucketName(), config.getAwsRegion());
+        logger.info("Initialized (bucket: {}, region: {})", s3BucketName, awsRegion);
     }
 
     /**
@@ -107,14 +153,11 @@ public class Manager {
     }
 
     private void ensureQueuesExist() {
-        int visibilityTimeout = config.getVisibilityTimeout();
-        int waitTime = config.getWaitTimeSeconds();
-
         // Ensure queues exist
-        sqsService.createQueueIfNotExists(config.getLocalAppInputQueue(), visibilityTimeout, waitTime);
-        sqsService.createQueueIfNotExists(config.getLocalAppOutputQueue(), visibilityTimeout, waitTime);
-        sqsService.createQueueIfNotExists(config.getWorkerInputQueue(), visibilityTimeout, waitTime);
-        sqsService.createQueueIfNotExists(config.getWorkerOutputQueue(), visibilityTimeout, waitTime);
+        sqsService.createQueueIfNotExists(localAppInputQueue, visibilityTimeout, waitTimeSeconds);
+        sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout, waitTimeSeconds);
+        sqsService.createQueueIfNotExists(workerInputQueue, visibilityTimeout, waitTimeSeconds);
+        sqsService.createQueueIfNotExists(workerOutputQueue, visibilityTimeout, waitTimeSeconds);
     }
 
     /**
@@ -168,7 +211,7 @@ public class Manager {
 
         // Check idle timeout
         long idleTimeMinutes = (System.currentTimeMillis() - lastActivityTime) / (60 * 1000);
-        if (idleTimeMinutes >= config.getIdleTimeoutMinutes()) {
+        if (idleTimeMinutes >= idleTimeoutMinutes) {
             logger.info("Idle timeout reached ({} minutes)", idleTimeMinutes);
             return true;
         }
@@ -261,7 +304,7 @@ public class Manager {
         logger.info("=== Manager Application Starting ===");
 
         try {
-            ManagerConfig config = new ManagerConfig();
+            AppConfig config = new AppConfig();
             Manager manager = new Manager(config);
             manager.start();
         } catch (Exception e) {

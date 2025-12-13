@@ -1,5 +1,6 @@
 package com.distributed.systems;
 
+import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.WorkerTaskMessage;
 import com.distributed.systems.shared.service.S3Service;
 import edu.stanford.nlp.ling.HasWord;
@@ -34,8 +35,19 @@ public class TaskProcessor {
 
     private static final Logger logger = LoggerFactory.getLogger(TaskProcessor.class);
 
-    private final WorkerConfig config;
+    // Config Keys
+    private static final String TEMP_DIR_KEY = "TEMP_DIR";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+    private static final String MAX_SENTENCE_LENGTH_KEY = "MAX_SENTENCE_LENGTH";
+    private static final String S3_RESULTS_PREFIX_KEY = "S3_WORKER_RESULTS_PREFIX";
+
     private final S3Service s3Service;
+
+    // Config Values
+    private final String tempDir;
+    private final String s3BucketName;
+    private final int maxSentenceLength;
+    private final String s3ResultsPrefix;
 
     // Singleton models to save memory (loaded lazily)
     private static volatile MaxentTagger sharedTagger;
@@ -46,15 +58,21 @@ public class TaskProcessor {
     private static final String POS_MODEL_PATH = "edu/stanford/nlp/models/pos-tagger/english-left3words/english-left3words-distsim.tagger";
     private static final String PARSER_MODEL_PATH = "edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz";
 
-    public TaskProcessor(WorkerConfig config, S3Service s3Service) {
-        this.config = config;
+    public TaskProcessor(AppConfig config, S3Service s3Service) {
         this.s3Service = s3Service;
+
+        // Load Configuration
+        this.tempDir = config.getString(TEMP_DIR_KEY);
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.maxSentenceLength = config.getIntOptional(MAX_SENTENCE_LENGTH_KEY, 100);
+        this.s3ResultsPrefix = config.getOptional(S3_RESULTS_PREFIX_KEY, "workers-results");
+
         ensureTempDirectory();
     }
 
     private void ensureTempDirectory() {
         try {
-            Files.createDirectories(Paths.get(config.getTempDirectory()));
+            Files.createDirectories(Paths.get(tempDir));
         } catch (IOException e) {
             throw new RuntimeException("Failed to create temp directory", e);
         }
@@ -71,7 +89,7 @@ public class TaskProcessor {
 
         // Prepare output file (we still write output to disk as a buffer before upload)
         String outputFilename = "result_" + UUID.randomUUID() + ".txt";
-        Path outputPath = Paths.get(config.getTempDirectory(), outputFilename);
+        Path outputPath = Paths.get(tempDir, outputFilename);
 
         try {
             // Stream input directly from S3/URL and write to local output file
@@ -85,7 +103,7 @@ public class TaskProcessor {
             String s3Key = generateS3Key(url, method);
             s3Service.uploadFile(outputPath, s3Key);
 
-            String s3Url = "s3://" + config.getS3BucketName() + "/" + s3Key;
+            String s3Url = "s3://" + s3BucketName + "/" + s3Key;
             logger.info("Task processed successfully. S3 URL: {}", s3Url);
             return s3Url;
 
@@ -110,7 +128,7 @@ public class TaskProcessor {
         // DocumentPreprocessor iterates over sentences directly from the stream
         DocumentPreprocessor dp = new DocumentPreprocessor(new InputStreamReader(input));
 
-        int maxLen = config.getMaxSentenceLength();
+        int maxLen = maxSentenceLength;
 
         for (List<HasWord> sentence : dp) {
             if (sentence == null || sentence.isEmpty())
@@ -227,7 +245,7 @@ public class TaskProcessor {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
         String filename = extractFilename(originalUrl);
         return String.format("%s/%s/%s-%s.txt",
-                config.getS3WorkerResultsPrefix(),
+                s3ResultsPrefix,
                 timestamp, method, filename);
     }
 

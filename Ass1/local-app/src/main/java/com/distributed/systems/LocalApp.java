@@ -1,6 +1,11 @@
 package com.distributed.systems;
 
-import com.distributed.systems.shared.AwsClientFactory;
+import com.distributed.systems.shared.AppConfig;
+
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.sqs.SqsClient;
 import com.distributed.systems.shared.model.LocalAppRequest;
 import com.distributed.systems.shared.model.LocalAppResponse;
 import com.distributed.systems.shared.service.Ec2Service;
@@ -29,7 +34,36 @@ public class LocalApp {
 
     private static final Logger logger = LoggerFactory.getLogger(LocalApp.class);
 
-    private final LocalAppConfig config;
+    // Config Keys
+    private static final String AWS_REGION_KEY = "AWS_REGION";
+    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
+    private static final String LOCAL_APP_INPUT_QUEUE_KEY = "LOCAL_APP_INPUT_QUEUE";
+    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
+    private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
+    private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
+    private static final String S3_INPUT_PREFIX_KEY = "S3_INPUT_PREFIX";
+
+    // Manager Launch Config
+    private static final String MANAGER_AMI_KEY = "MANAGER_AMI_ID";
+    private static final String MANAGER_INSTANCE_TYPE_KEY = "MANAGER_INSTANCE_TYPE";
+    private static final String MANAGER_IAM_ROLE_KEY = "MANAGER_IAM_ROLE";
+    private static final String MANAGER_SECURITY_GROUP_KEY = "MANAGER_SECURITY_GROUP";
+    private static final String MANAGER_KEY_NAME_KEY = "MANAGER_KEY_NAME";
+
+    // Config Values
+    private final String awsRegion;
+    private final String s3BucketName;
+    private final String localAppInputQueue;
+    private final String localAppOutputQueue;
+    private final int waitTimeSeconds;
+    private final int visibilityTimeout;
+    private final String s3InputPrefix;
+    private final String managerAmiId;
+    private final String managerInstanceType;
+    private final String managerIamRole;
+    private final String managerSecurityGroup;
+    private final String managerKeyName;
+
     private final Ec2Service ec2Service;
     private final S3Service s3Service;
     private final SqsService sqsService;
@@ -45,18 +79,37 @@ public class LocalApp {
     private String inputS3Key;
 
     public LocalApp(String inputFileName, String outputFileName, int n, boolean terminate) {
-        this.config = new LocalAppConfig();
+        AppConfig config = new AppConfig();
+
+        // Load Configuration
+        this.awsRegion = config.getString(AWS_REGION_KEY);
+        this.s3BucketName = config.getString(S3_BUCKET_KEY);
+        this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
+        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
+        this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
+        this.s3InputPrefix = config.getOptional(S3_INPUT_PREFIX_KEY, "input");
+        this.managerAmiId = config.getString(MANAGER_AMI_KEY);
+        this.managerInstanceType = config.getString(MANAGER_INSTANCE_TYPE_KEY);
+        this.managerIamRole = config.getString(MANAGER_IAM_ROLE_KEY);
+        this.managerSecurityGroup = config.getString(MANAGER_SECURITY_GROUP_KEY);
+        this.managerKeyName = config.getString(MANAGER_KEY_NAME_KEY);
+
         this.inputFileName = inputFileName;
         this.outputFileName = outputFileName;
         this.n = n;
         this.terminate = terminate;
         this.jobId = UUID.randomUUID().toString().substring(0, 8);
 
-        // Initialize shared services using AwsClientFactory
-        String region = config.getAwsRegion();
-        this.ec2Service = new Ec2Service(AwsClientFactory.createEc2Client(region));
-        this.s3Service = new S3Service(AwsClientFactory.createS3Client(region), config.getS3BucketName());
-        this.sqsService = new SqsService(AwsClientFactory.createSqsClient(region));
+        // Initialize shared services
+        Ec2Client ec2Client = Ec2Client.builder().region(Region.of(awsRegion)).build();
+        this.ec2Service = new Ec2Service(ec2Client);
+
+        S3Client s3Client = S3Client.builder().region(Region.of(awsRegion)).build();
+        this.s3Service = new S3Service(s3Client, s3BucketName);
+
+        SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
+        this.sqsService = new SqsService(sqsClient);
 
         logger.info("Local Application initialized");
         logger.info("  Input file: {}", inputFileName);
@@ -128,18 +181,10 @@ public class LocalApp {
     }
 
     private void ensureQueuesExist() {
-        int visibilityTimeout = config.getVisibilityTimeout();
-        int waitTime = config.getWaitTimeSeconds();
-
-        sqsService.createQueueIfNotExists(config.getLocalAppInputQueue(), visibilityTimeout, waitTime);
-        sqsService.createQueueIfNotExists(config.getLocalAppOutputQueue(), visibilityTimeout, waitTime);
+        sqsService.createQueueIfNotExists(localAppInputQueue, visibilityTimeout, waitTimeSeconds);
+        sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout, waitTimeSeconds);
         // Manager queues should be created by Manager, but we can ensure them here if
         // we want strictness.
-        // For now, we only ensure the queues we interact with directly or expect to
-        // exist.
-        // Actually, we send to LocalAppInputQueue (Manager reads from it), and receive
-        // from LocalAppOutputQueue.
-        // So we should ensure they exist.
     }
 
     private void ensureManagerRunning() {
@@ -159,12 +204,12 @@ public class LocalApp {
                 Tag.builder().key("Name").value("TextAnalysis-Manager").build());
 
         Instance instance = ec2Service.launchInstance(
-                config.getManagerAmiId(),
-                config.getManagerInstanceType(),
+                managerAmiId,
+                managerInstanceType,
                 userData,
-                config.getManagerIamRole(),
-                config.getManagerSecurityGroup(),
-                config.getManagerKeyName(),
+                managerIamRole,
+                managerSecurityGroup,
+                managerKeyName,
                 tags,
                 1, 1);
 
@@ -217,7 +262,7 @@ public class LocalApp {
                 "dnf install -y java-11-amazon-corretto-headless\n" +
                 "# Download manager.jar from S3\n" +
                 "echo 'Downloading manager.jar from S3...'\n" +
-                "aws s3 cp s3://" + config.getS3BucketName() + "/manager.jar /home/ec2-user/manager.jar\n" +
+                "aws s3 cp s3://" + s3BucketName + "/manager.jar /home/ec2-user/manager.jar\n" +
                 "# Create .env file with configuration\n" +
                 "echo 'Creating .env file...'\n" +
                 "cat <<'EOF' > .env\n" +
@@ -235,14 +280,14 @@ public class LocalApp {
 
     private void uploadInputFile() {
         Path inputPath = Paths.get(inputFileName);
-        inputS3Key = String.format("%s/%s/input.txt", config.getS3InputPrefix(), jobId);
+        inputS3Key = String.format("%s/%s/input.txt", s3InputPrefix, jobId);
         s3Service.uploadFile(inputPath, inputS3Key);
         logger.info("Input file uploaded to S3: {}", inputS3Key);
     }
 
     private void sendTaskRequest() {
         LocalAppRequest request = LocalAppRequest.newTask(inputS3Key, n);
-        sqsService.sendMessage(config.getLocalAppInputQueue(), request);
+        sqsService.sendMessage(localAppInputQueue, request);
         logger.info("Task request sent: {}", request);
     }
 
@@ -252,8 +297,8 @@ public class LocalApp {
         int pollCount = 0;
 
         while (true) {
-            List<Message> messages = sqsService.receiveMessages(config.getLocalAppOutputQueue(), 1,
-                    config.getWaitTimeSeconds(), config.getVisibilityTimeout());
+            List<Message> messages = sqsService.receiveMessages(localAppOutputQueue, 1,
+                    waitTimeSeconds, visibilityTimeout);
 
             for (Message message : messages) {
                 try {
@@ -263,7 +308,7 @@ public class LocalApp {
                             response.getData() != null &&
                             inputS3Key.equals(response.getData().getInputFileS3Key())) {
 
-                        sqsService.deleteMessage(config.getLocalAppOutputQueue(), message);
+                        sqsService.deleteMessage(localAppOutputQueue, message);
                         logger.info("Response received after {} seconds",
                                 (System.currentTimeMillis() - startTime) / 1000);
                         return response;
@@ -302,7 +347,7 @@ public class LocalApp {
 
     private void sendTerminateMessage() {
         LocalAppRequest terminateRequest = LocalAppRequest.terminate();
-        sqsService.sendMessage(config.getLocalAppInputQueue(), terminateRequest);
+        sqsService.sendMessage(localAppInputQueue, terminateRequest);
         logger.info("Terminate message sent to Manager");
     }
 
