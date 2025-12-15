@@ -190,9 +190,10 @@ public class WorkerScaler implements Runnable {
                 "cat <<'EOF' > .env\n" +
                 envContent + "\n" +
                 "EOF\n" +
-                "# Run the Worker\n" +
+                "# Run the Worker with adequate heap for Stanford NLP models\n" +
                 "echo 'Starting Worker...'\n" +
-                "java -jar worker.jar >> /var/log/worker.log 2>&1 &\n" +
+                "# The Stanford NLP Dependency Parser requires ~2GB heap to load\n" +
+                "java -Xms512m -Xmx3g -jar worker.jar >> /var/log/worker.log 2>&1 &\n" +
                 "echo 'Worker started successfully'\n";
     }
 
