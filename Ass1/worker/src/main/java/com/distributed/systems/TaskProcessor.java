@@ -15,7 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.net.URL;
+import java.net.URI;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -92,11 +93,17 @@ public class TaskProcessor {
         Path outputPath = Paths.get(tempDir, outputFilename);
 
         try {
+            // Open connection to get content length for progress tracking
+            URLConnection connection = URI.create(url).toURL().openConnection();
+            long contentLength = connection.getContentLengthLong();
+            
             // Stream input directly from S3/URL and write to local output file
-            try (InputStream inputStream = new URL(url).openStream();
+            try (InputStream rawStream = connection.getInputStream();
+                    ProgressTrackingInputStream inputStream = new ProgressTrackingInputStream(rawStream, contentLength, url);
                     BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
                 processStream(inputStream, writer, method);
+                inputStream.logFinalProgress(); // Log 100% when done
             }
 
             // Upload to S3
@@ -232,11 +239,31 @@ public class TaskProcessor {
         if (dependencyParser == null) {
             synchronized (TaskProcessor.class) {
                 if (dependencyParser == null) {
-                    logger.info("Loading Dependency Parser...");
-                    dependencyParser = DependencyParser.loadFromModelFile(DependencyParser.DEFAULT_MODEL);
+                    logMemoryStatus("Before loading Dependency Parser");
+                    logger.info("Loading Dependency Parser (model: {})...", DependencyParser.DEFAULT_MODEL);
+                    
+                    long startTime = System.currentTimeMillis();
+                    try {
+                        dependencyParser = DependencyParser.loadFromModelFile(DependencyParser.DEFAULT_MODEL);
+                        long elapsed = System.currentTimeMillis() - startTime;
+                        logger.info("Dependency Parser loaded successfully in {} ms", elapsed);
+                        logMemoryStatus("After loading Dependency Parser");
+                    } catch (OutOfMemoryError e) {
+                        logger.error("OUT OF MEMORY loading Dependency Parser! Increase JVM heap size (-Xmx). Current max heap: {} MB",
+                            Runtime.getRuntime().maxMemory() / (1024 * 1024));
+                        throw e;
+                    }
                 }
             }
         }
+    }
+
+    private void logMemoryStatus(String phase) {
+        Runtime rt = Runtime.getRuntime();
+        long usedMB = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
+        long maxMB = rt.maxMemory() / (1024 * 1024);
+        long freeMB = rt.freeMemory() / (1024 * 1024);
+        logger.info("[Memory {}] Used: {} MB, Free: {} MB, Max: {} MB", phase, usedMB, freeMB, maxMB);
     }
 
     // --- Output Naming Utilities ---
@@ -262,5 +289,80 @@ public class TaskProcessor {
 
     public static boolean isValidParsingMethod(String method) {
         return "POS".equals(method) || "CONSTITUENCY".equals(method) || "DEPENDENCY".equals(method);
+    }
+
+    /**
+     * InputStream wrapper that tracks bytes read and logs progress at 10% intervals.
+     */
+    private static class ProgressTrackingInputStream extends FilterInputStream {
+        private final long totalBytes;
+        private final String url;
+        private long bytesRead = 0;
+        private int lastLoggedPercent = 0;
+        private static final int LOG_INTERVAL = 10; // Log every 10%
+
+        public ProgressTrackingInputStream(InputStream in, long totalBytes, String url) {
+            super(in);
+            this.totalBytes = totalBytes;
+            this.url = extractShortName(url);
+            if (totalBytes > 0) {
+                logger.info("Starting processing of {} ({} bytes)", this.url, totalBytes);
+            } else {
+                logger.info("Starting processing of {} (unknown size)", this.url);
+            }
+        }
+
+        private String extractShortName(String url) {
+            try {
+                String name = url.substring(url.lastIndexOf('/') + 1);
+                if (name.length() > 30) {
+                    name = name.substring(0, 27) + "...";
+                }
+                return name;
+            } catch (Exception e) {
+                return "file";
+            }
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b != -1) {
+                bytesRead++;
+                checkProgress();
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n = super.read(b, off, len);
+            if (n > 0) {
+                bytesRead += n;
+                checkProgress();
+            }
+            return n;
+        }
+
+        private void checkProgress() {
+            if (totalBytes <= 0) return; // Can't calculate progress without total size
+            
+            int currentPercent = (int) ((bytesRead * 100) / totalBytes);
+            int currentInterval = (currentPercent / LOG_INTERVAL) * LOG_INTERVAL;
+            
+            if (currentInterval > lastLoggedPercent && currentInterval < 100) {
+                lastLoggedPercent = currentInterval;
+                logger.info("Processing {}: {}% complete ({}/{} bytes)", 
+                    url, currentInterval, bytesRead, totalBytes);
+            }
+        }
+
+        public void logFinalProgress() {
+            if (totalBytes > 0) {
+                logger.info("Processing {}: 100% complete ({} bytes processed)", url, bytesRead);
+            } else {
+                logger.info("Processing {}: complete ({} bytes processed)", url, bytesRead);
+            }
+        }
     }
 }
