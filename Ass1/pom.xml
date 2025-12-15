@@ -23,6 +23,7 @@
         <aws.java.sdk.version>2.20.43</aws.java.sdk.version>
         <slf4j.version>2.0.7</slf4j.version>
         <jackson.version>2.15.2</jackson.version>
+        <logback.version>1.4.14</logback.version>
     </properties>
 
     <dependencyManagement>
@@ -62,6 +63,13 @@
                 <groupId>io.github.cdimascio</groupId>
                 <artifactId>java-dotenv</artifactId>
                 <version>5.2.2</version>
+            </dependency>
+            
+            <!-- Logback Classic -->
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

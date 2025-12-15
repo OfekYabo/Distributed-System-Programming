@@ -63,14 +63,16 @@
       <artifactId>jackson-databind</artifactId>
     </dependency>
 
-    <!-- Logging -->
+    <!-- Logging with Logback (for CloudWatch integration) -->
     <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
     </dependency>
+    
+    <!-- CloudWatch Logs SDK -->
     <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-simple</artifactId>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>cloudwatchlogs</artifactId>
     </dependency>
 
     <!-- Testing -->

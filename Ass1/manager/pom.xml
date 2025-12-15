@@ -44,7 +44,12 @@
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
-      <version>1.4.14</version>
+    </dependency>
+    
+    <!-- CloudWatch Logs SDK -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>cloudwatchlogs</artifactId>
     </dependency>
 
     <!-- Testing -->
