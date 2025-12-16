@@ -87,7 +87,7 @@ public class TaskProcessor {
      * Processes a task by streaming data from the URL, parsing it, and uploading
      * the result.
      */
-    public String processTask(WorkerTaskMessage.TaskData taskData) throws Exception {
+    public String processTask(WorkerTaskMessage.TaskData taskData, long deadlineEpochMillis) throws Exception {
         String url = taskData.getUrl();
         String method = taskData.getParsingMethod();
         logger.info("Processing task: URL={}, Method={}", url, method);
@@ -159,7 +159,7 @@ public class TaskProcessor {
             try (InputStream inStream = processingStream;
                     BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
-                processStream(inStream, writer, method, totalSize);
+                processStream(inStream, writer, method, totalSize, deadlineEpochMillis);
             }
 
             // 3. Upload result to S3
@@ -187,7 +187,8 @@ public class TaskProcessor {
      * Core processing loop. Reads sentences from stream and applies appropriate
      * parser.
      */
-    private void processStream(InputStream input, BufferedWriter writer, String method, long totalBytes)
+    private void processStream(InputStream input, BufferedWriter writer, String method, long totalBytes,
+            long deadlineEpochMillis)
             throws Exception {
         // Prepare the specific processor logic based on method
         BiConsumer<List<HasWord>, BufferedWriter> sentenceProcessor = getSentenceProcessor(method);
@@ -219,12 +220,28 @@ public class TaskProcessor {
         int lastLoggedPercent = 0;
 
         for (List<HasWord> sentence : dp) {
+            // Check for Hard Deadline (in case interrupt is swallowed)
+            if (System.currentTimeMillis() > deadlineEpochMillis) {
+                logger.error(">>> [HARD DEADLINE EXCEEDED] <<< Stopping processing loop.");
+                throw new java.util.concurrent.TimeoutException("Hard deadline exceeded");
+            }
+
+            // Check for interruption (e.g. timeout)
+            if (Thread.currentThread().isInterrupted()) {
+                logger.warn(">>> [WORKER INTERRUPTED] <<< Stopping processing loop.");
+                throw new InterruptedException("Task interrupted");
+            }
+
             if (sentence == null || sentence.isEmpty())
                 continue;
 
             try {
                 sentenceProcessor.accept(sentence, writer);
             } catch (Exception e) {
+                // If it's the InterruptedException we just threw (wrapped), rethrow it
+                if (e.getCause() instanceof InterruptedException || e instanceof InterruptedException) {
+                    throw (Exception) e; // Stop processing
+                }
                 logger.warn("Error processing sentence: {}", e.getMessage());
                 writer.write("[ERROR: " + e.getMessage() + "]\n");
             }
@@ -284,6 +301,7 @@ public class TaskProcessor {
     private void processConstituency(List<HasWord> sentence, BufferedWriter writer) {
         try {
             if (sentence.size() > maxSentenceLength) {
+                logger.warn(">>> [SKIPPED LONG SENTENCE] <<< Size: {} words", sentence.size());
                 writer.write("[SKIPPED LONG SENTENCE: " + sentence.size() + " words]\n");
                 return;
             }

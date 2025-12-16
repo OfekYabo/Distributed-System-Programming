@@ -33,6 +33,8 @@ public class Worker {
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
     private static final String MAX_MESSAGES_KEY = "WORKER_MAX_MESSAGES";
 
+    private static final String IDLE_SHUTDOWN_KEY = "WORKER_IDLE_SHUTDOWN_SECONDS";
+
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final TaskProcessor taskProcessor;
@@ -46,6 +48,7 @@ public class Worker {
     private final int maxMessages;
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
+    private final int idleShutdownSeconds;
 
     public Worker(AppConfig config) {
         this.running = new AtomicBoolean(true);
@@ -57,7 +60,8 @@ public class Worker {
         this.outputQueue = config.getString(OUTPUT_QUEUE_KEY);
         this.maxMessages = config.getIntOptional(MAX_MESSAGES_KEY, 1);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
-        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 90);
+        this.idleShutdownSeconds = config.getIntOptional(IDLE_SHUTDOWN_KEY, 60); // Default 60s idle timeout
 
         // Initialize AWS clients
         SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
@@ -69,7 +73,7 @@ public class Worker {
         // Initialize task processor
         this.taskProcessor = new TaskProcessor(config, s3Service);
 
-        logger.info("Worker initialized.");
+        logger.info("Worker initialized. Idle shutdown set to {} seconds.", idleShutdownSeconds);
     }
 
     /**
@@ -81,6 +85,8 @@ public class Worker {
         // Setup shutdown hook for graceful termination
         setupShutdownHook();
 
+        long lastActivityTime = System.currentTimeMillis();
+
         // Main processing loop
         while (running.get()) {
             try {
@@ -88,13 +94,23 @@ public class Worker {
                 List<Message> messages = sqsService.receiveMessages(inputQueue, maxMessages, waitTimeSeconds,
                         visibilityTimeout);
 
-                // Process each message
-                for (Message message : messages) {
-                    if (!running.get()) {
-                        break;
+                if (!messages.isEmpty()) {
+                    lastActivityTime = System.currentTimeMillis();
+                    // Process each message
+                    for (Message message : messages) {
+                        if (!running.get()) {
+                            break;
+                        }
+                        processMessage(message);
                     }
-
-                    processMessage(message);
+                    // Update activity time again after processing
+                    lastActivityTime = System.currentTimeMillis();
+                } else {
+                    // Check for idle timeout
+                    if (System.currentTimeMillis() - lastActivityTime > idleShutdownSeconds * 1000L) {
+                        logger.info("Worker idle for {} seconds. Shutting down.", idleShutdownSeconds);
+                        running.set(false);
+                    }
                 }
 
             } catch (Exception e) {
@@ -108,7 +124,7 @@ public class Worker {
         cleanup();
     }
 
-    private final ExecutorService taskExecutor = Executors.newSingleThreadExecutor();
+    private ExecutorService taskExecutor = Executors.newSingleThreadExecutor();
 
     /**
      * Processes a single message
@@ -139,11 +155,14 @@ public class Worker {
             }
 
             // Process the task with timeout
+            long timeoutSeconds = Math.max(10, visibilityTimeout - 10);
+            long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000);
+
+            Future<String> future = null;
             try {
-                Future<String> future = taskExecutor.submit(() -> taskProcessor.processTask(taskData));
+                future = taskExecutor.submit(() -> taskProcessor.processTask(taskData, deadline));
 
                 // Wait for slightly less than visibility timeout to handle it before SQS does
-                long timeoutSeconds = Math.max(10, visibilityTimeout - 10);
                 String s3Url = future.get(timeoutSeconds, TimeUnit.SECONDS);
 
                 // Send success response
@@ -153,7 +172,16 @@ public class Worker {
                 sqsService.deleteMessage(inputQueue, message);
 
             } catch (TimeoutException e) {
-                logger.error("Task timed out after {} seconds", Math.max(10, visibilityTimeout - 10), e);
+                if (future != null)
+                    future.cancel(true); // Attempt to interrupt
+                logger.error("Task timed out after {} seconds. Killing zombie thread.",
+                        Math.max(10, visibilityTimeout - 10), e);
+
+                // Nuclear Option: Kill the executor service to abandon the stuck thread
+                taskExecutor.shutdownNow();
+                taskExecutor = Executors.newSingleThreadExecutor();
+                logger.warn("ExecutorService restarted to clear stuck thread.");
+
                 sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), "Task Timed Out");
                 sqsService.deleteMessage(inputQueue, message); // Delete so we don't retry forever
             } catch (ExecutionException e) {
