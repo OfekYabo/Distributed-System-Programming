@@ -41,6 +41,7 @@ public class TaskProcessor {
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
     private static final String S3_RESULTS_PREFIX_KEY = "S3_WORKER_RESULTS_PREFIX";
     private static final String MAX_RAM_BUFFER_KEY = "WORKER_MAX_RAM_BUFFER_MB";
+    private static final String MAX_SENTENCE_LENGTH_KEY = "WORKER_MAX_SENTENCE_LENGTH";
 
     private final S3Service s3Service;
 
@@ -49,6 +50,7 @@ public class TaskProcessor {
     private final String s3BucketName;
     private final String s3ResultsPrefix;
     private final int maxRamBufferSize;
+    private final int maxSentenceLength;
 
     // Singleton models to save memory (loaded lazily)
     private static volatile MaxentTagger sharedTagger;
@@ -68,6 +70,7 @@ public class TaskProcessor {
         this.s3ResultsPrefix = config.getOptional(S3_RESULTS_PREFIX_KEY, "workers-results");
         // Default to 50MB if not specified
         this.maxRamBufferSize = config.getIntOptional(MAX_RAM_BUFFER_KEY, 50) * 1024 * 1024;
+        this.maxSentenceLength = config.getIntOptional(MAX_SENTENCE_LENGTH_KEY, 80);
 
         ensureTempDirectory();
     }
@@ -280,6 +283,10 @@ public class TaskProcessor {
 
     private void processConstituency(List<HasWord> sentence, BufferedWriter writer) {
         try {
+            if (sentence.size() > maxSentenceLength) {
+                writer.write("[SKIPPED LONG SENTENCE: " + sentence.size() + " words]\n");
+                return;
+            }
             Tree tree = constituencyParser.apply(sentence);
             writer.write(tree.toString());
             writer.write("\n\n");

@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.util.List;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -107,6 +108,8 @@ public class Worker {
         cleanup();
     }
 
+    private final ExecutorService taskExecutor = Executors.newSingleThreadExecutor();
+
     /**
      * Processes a single message
      */
@@ -135,9 +138,13 @@ public class Worker {
                 return;
             }
 
-            // Process the task
+            // Process the task with timeout
             try {
-                String s3Url = taskProcessor.processTask(taskData);
+                Future<String> future = taskExecutor.submit(() -> taskProcessor.processTask(taskData));
+
+                // Wait for slightly less than visibility timeout to handle it before SQS does
+                long timeoutSeconds = Math.max(10, visibilityTimeout - 10);
+                String s3Url = future.get(timeoutSeconds, TimeUnit.SECONDS);
 
                 // Send success response
                 sendSuccessResponse(taskData.getUrl(), s3Url, taskData.getParsingMethod());
@@ -145,21 +152,22 @@ public class Worker {
                 // Delete message from queue (only after successful processing)
                 sqsService.deleteMessage(inputQueue, message);
 
-            } catch (Exception e) {
-                logger.error("Failed to process task", e);
-
-                // Send error response
-                String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            } catch (TimeoutException e) {
+                logger.error("Task timed out after {} seconds", Math.max(10, visibilityTimeout - 10), e);
+                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), "Task Timed Out");
+                sqsService.deleteMessage(inputQueue, message); // Delete so we don't retry forever
+            } catch (ExecutionException e) {
+                logger.error("Failed to process task", e.getCause());
+                String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
                 sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), errorMsg);
-
-                // Delete message from queue (we handled the error by sending error response)
                 sqsService.deleteMessage(inputQueue, message);
+            } catch (InterruptedException e) {
+                logger.error("Worker interrupted while waiting for task", e);
+                Thread.currentThread().interrupt();
             }
 
         } catch (Exception e) {
             logger.error("Failed to parse or handle message", e);
-            // Don't delete the message - it will become visible again after visibility
-            // timeout
         }
     }
 
@@ -205,6 +213,7 @@ public class Worker {
      */
     private void cleanup() {
         try {
+            taskExecutor.shutdownNow();
             sqsService.close();
             s3Service.close();
             logger.info("Cleanup completed");
