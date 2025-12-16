@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Analysis Results</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .result {
+      background: white;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .success {
+      border-left: 4px solid #4CAF50;
+    }
+    .error {
+      border-left: 4px solid #f44336;
+    }
+    .analysis-type {
+      font-weight: bold;
+      color: #2196F3;
+    }
+    a {
+      color: #1976D2;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .error-msg {
+      color: #f44336;
+      font-style: italic;
+    }
+    .stats {
+      background: #e3f2fd;
+      padding: 10px 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Analysis Results</h1>
+  <div class="stats">
+    <strong>Total: 1</strong> |     <span style="color: #4CAF50;">Success: 1</span> |     <span style="color: #f44336;">Errors: 0</span>
+  </div>
+  <div class="result success">
+    <span class="analysis-type">POS</span>:     <a href="https://www.gutenberg.org/files/1659/1659-0.txt" target="_blank">https://www.gutenberg.org/files/1659/1659-0.txt</a>     <a href="https://ds-assignment-1-ofek.s3.amazonaws.com/workers-results/1765848495356/POS-1659-0.txt?X-Amz-Security-Token=IQoJb3JpZ2luX2VjEJL%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIDcvDqDdc5S5KPNXByaQPltl9y%2FEzJV1Sy3Xz9M7YqhnAiEAu8GFdBaK%2BGQ07h5SGIpGhJuOtIwdgTo9KqPf68SqMaIquwUIWhAAGgwyMzQ1NTU3Nzc2MjMiDKZf2DM2lu50slP%2BwiqYBefgvJ9t3fETqNp5K0VWzM8j0g0wkX2U4UvFO7LhZxcHrTm%2FWZ1ly1BZyPFlaS5FiVbmfj%2FA9M1r3euiewqOKGOV4%2FCQnj89Ot55KyzsHyY%2Bl%2BYUzP68%2BS8fatSsVLXUtV8zYNL3XvaNQZsndhfolFyblWjfnvezQnL%2BDfbd3Hzo0X5c6KEl2wa%2BENgCnd8y%2BVvs17VTT7rDT2JU2PpfWqlUgZmBzRKq3xzSEwimhFz9J7oCe9qs%2FifEy1E1hAjTdbwGv9uGC0tJjzc2Vs3QR8V%2BOcGsdcRRE9gA6LFyGW63de9D0dU4Z9y2KQzuHsvAMqtDh4ksuT699ilXWPhMFdBix5s8zc4KPGWXVnnwa4jYX%2B3XZXLo7XJUIHo6pUeXh%2BtzJliTSyGSa8FqBHSUua8vDHVBo5RHyc%2F%2FP6hcBGCRuTh9hUKyKGzDqgGldXSIka%2B%2F3HhoQejzitwLPuAD1cAzT0Ynm4naNvhfgIGLHXwzEQqohmdloALhU1sYZfc0vVdSf9goSxDrQWnctxnxiWHGWy0hUVKE5dxxXFliWY2jtdLasyn1IKcjZXauY6rSFG9pZmXLNCTxASc8%2F1IETNiUulhWX%2FVNSz7cnoX%2FgCpxxUQZBilJPft4A3F9b3%2Bm%2BBe9YZrsaRuIZGQjU%2Fr0K7xuwm%2BlJzSZ7tOmc0amDPbpSzitMO6jMA03KnSIOiEdy2WbRqvEXq5II6mIzRYPLoWJgmEy1gHxCwJGgI0Lk9WrQXiUNuUZkwFkI1SIY01Xc7aMtPIY8VhSdXv5cqfdU6QMEZusghSCDUKZLvhDVy8kyPosO4hf4Tcj%2Fri7F3WA6jS4dvu3Az5ajDYVN4NFycgBThKAXBbfuFNWFaGskEiklMHfmxKlFlYwjeSCygY6sQEjCzWHzLVIfuL2MLMG%2FN8FpTIQ2Bv2UoYHjqViuZJSFtxG4TaN4Ms%2Bqa7jSk9G7x%2Fi6qUQqDelJDdBnRjet3lHX%2FKRcRTkUcd35N%2BZ12dvBcOWg8HhjohBs8qs5os%2Br%2B8QV8xVyH2yAiWrwW3fGvvPqd4ClKVNVxjdcPOoIRQX5NLIXVQnYVdJczDgZCdsImHu6l09zkr3NM9K%2BzncxBy33y8eybLR2lNA2vvUbWzFmjw%3D&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Date=20251216T012815Z&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Expires=3600&amp;X-Amz-Credential=ASIATNHE5EJLXM2L75QD%2F20251216%2Fus-east-1%2Fs3%2Faws4_request&amp;X-Amz-Signature=748e573f7fd7c35e7eca0657cbee9bcdebbc0da67515056323d73be490a4bbe1" target="_blank">[Output]</a>
+  </div>
+</body>
+</html>

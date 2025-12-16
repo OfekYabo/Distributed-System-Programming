@@ -39,16 +39,16 @@ public class TaskProcessor {
     // Config Keys
     private static final String TEMP_DIR_KEY = "TEMP_DIR";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
-    private static final String MAX_SENTENCE_LENGTH_KEY = "MAX_SENTENCE_LENGTH";
     private static final String S3_RESULTS_PREFIX_KEY = "S3_WORKER_RESULTS_PREFIX";
+    private static final String MAX_RAM_BUFFER_KEY = "WORKER_MAX_RAM_BUFFER_MB";
 
     private final S3Service s3Service;
 
     // Config Values
     private final String tempDir;
     private final String s3BucketName;
-    private final int maxSentenceLength;
     private final String s3ResultsPrefix;
+    private final int maxRamBufferSize;
 
     // Singleton models to save memory (loaded lazily)
     private static volatile MaxentTagger sharedTagger;
@@ -65,8 +65,9 @@ public class TaskProcessor {
         // Load Configuration
         this.tempDir = config.getString(TEMP_DIR_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
-        this.maxSentenceLength = config.getIntOptional(MAX_SENTENCE_LENGTH_KEY, 100);
         this.s3ResultsPrefix = config.getOptional(S3_RESULTS_PREFIX_KEY, "workers-results");
+        // Default to 50MB if not specified
+        this.maxRamBufferSize = config.getIntOptional(MAX_RAM_BUFFER_KEY, 50) * 1024 * 1024;
 
         ensureTempDirectory();
     }
@@ -88,38 +89,93 @@ public class TaskProcessor {
         String method = taskData.getParsingMethod();
         logger.info("Processing task: URL={}, Method={}", url, method);
 
-        // Prepare output file (we still write output to disk as a buffer before upload)
+        // Prepare temporary files (lazily created if needed)
         String outputFilename = "result_" + UUID.randomUUID() + ".txt";
         Path outputPath = Paths.get(tempDir, outputFilename);
 
-        try {
-            // Open connection to get content length for progress tracking
-            URLConnection connection = URI.create(url).toURL().openConnection();
-            long contentLength = connection.getContentLengthLong();
-            
-            // Stream input directly from S3/URL and write to local output file
-            try (InputStream rawStream = connection.getInputStream();
-                    ProgressTrackingInputStream inputStream = new ProgressTrackingInputStream(rawStream, contentLength, url);
-                    BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
+        // We might or might not use a temp input file
+        Path tempInputPath = null;
+        byte[] memoryBuffer = null;
 
-                processStream(inputStream, writer, method);
-                inputStream.logFinalProgress(); // Log 100% when done
+        try {
+            // 1. Download Content (Hybrid: RAM first, Spill to Disk if large)
+            logger.info("Downloading content...");
+            URLConnection connection = URI.create(url).toURL().openConnection();
+
+            try (InputStream in = connection.getInputStream()) {
+                ByteArrayOutputStream ramBuffer = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192]; // 8KB chunks
+                int bytesRead;
+                boolean spilledToDisk = false;
+
+                // Read from network
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    ramBuffer.write(buffer, 0, bytesRead);
+
+                    // Check if we exceeded RAM limit
+                    if (!spilledToDisk && ramBuffer.size() > maxRamBufferSize) {
+                        logger.info(">>> [DISK SPILL] <<< File larger than {} MB, spilling to disk...",
+                                maxRamBufferSize / (1024 * 1024));
+                        spilledToDisk = true;
+
+                        // Create temp file and write what we have so far
+                        tempInputPath = Paths.get(tempDir, "input_" + UUID.randomUUID() + ".txt");
+                        try (OutputStream fileOut = Files.newOutputStream(tempInputPath)) {
+                            ramBuffer.writeTo(fileOut);
+                            // Clear RAM buffer to free memory
+                            ramBuffer = null;
+
+                            // Continue writing remainder of stream directly to file
+                            while ((bytesRead = in.read(buffer)) != -1) {
+                                fileOut.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        break; // We are done reading the stream into the file
+                    }
+                }
+
+                if (!spilledToDisk) {
+                    memoryBuffer = ramBuffer.toByteArray();
+                    logger.warn(">>> [DOWNLOAD COMPLETE] <<< Kept in RAM ({} bytes).", memoryBuffer.length);
+                } else {
+                    logger.warn(">>> [DOWNLOAD COMPLETE] <<< Spilled to disk ({}).", tempInputPath);
+                }
             }
 
-            // Upload to S3
+            // 2. Process (from RAM or Disk)
+            InputStream processingStream;
+            long totalSize;
+            if (memoryBuffer != null) {
+                processingStream = new ByteArrayInputStream(memoryBuffer);
+                totalSize = memoryBuffer.length;
+            } else {
+                processingStream = Files.newInputStream(tempInputPath);
+                totalSize = Files.size(tempInputPath);
+            }
+
+            try (InputStream inStream = processingStream;
+                    BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
+
+                processStream(inStream, writer, method, totalSize);
+            }
+
+            // 3. Upload result to S3
             String s3Key = generateS3Key(url, method);
             s3Service.uploadFile(outputPath, s3Key);
 
             String s3Url = "s3://" + s3BucketName + "/" + s3Key;
-            logger.info("Task processed successfully. S3 URL: {}", s3Url);
+            logger.warn(">>> [TASK COMPLETE] <<< S3 URL: {}", s3Url);
             return s3Url;
 
         } finally {
-            // Cleanup output file
+            // Cleanup temp files
             try {
-                Files.deleteIfExists(outputPath);
+                if (outputPath != null)
+                    Files.deleteIfExists(outputPath);
+                if (tempInputPath != null)
+                    Files.deleteIfExists(tempInputPath);
             } catch (IOException e) {
-                logger.warn("Failed to delete temp file: {}", outputPath, e);
+                logger.warn("Failed to delete temp files", e);
             }
         }
     }
@@ -128,32 +184,64 @@ public class TaskProcessor {
      * Core processing loop. Reads sentences from stream and applies appropriate
      * parser.
      */
-    private void processStream(InputStream input, BufferedWriter writer, String method) throws Exception {
+    private void processStream(InputStream input, BufferedWriter writer, String method, long totalBytes)
+            throws Exception {
         // Prepare the specific processor logic based on method
         BiConsumer<List<HasWord>, BufferedWriter> sentenceProcessor = getSentenceProcessor(method);
 
-        // DocumentPreprocessor iterates over sentences directly from the stream
-        DocumentPreprocessor dp = new DocumentPreprocessor(new InputStreamReader(input));
+        // Simple wrapper to track bytes read for progress calculation
+        final long[] bytesRead = { 0 };
+        InputStream countingStream = new FilterInputStream(input) {
+            @Override
+            public int read() throws IOException {
+                int b = super.read();
+                if (b != -1)
+                    bytesRead[0]++;
+                return b;
+            }
 
-        int maxLen = maxSentenceLength;
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                int n = super.read(b, off, len);
+                if (n > 0)
+                    bytesRead[0] += n;
+                return n;
+            }
+        };
+
+        // DocumentPreprocessor iterates over sentences directly from the stream
+        DocumentPreprocessor dp = new DocumentPreprocessor(new InputStreamReader(countingStream));
+
+        int sentenceCount = 0;
+        int lastLoggedPercent = 0;
 
         for (List<HasWord> sentence : dp) {
             if (sentence == null || sentence.isEmpty())
                 continue;
 
-            // Split long sentences into chunks to avoid memory issues
-            for (int i = 0; i < sentence.size(); i += maxLen) {
-                int end = Math.min(i + maxLen, sentence.size());
-                List<HasWord> chunk = sentence.subList(i, end);
+            try {
+                sentenceProcessor.accept(sentence, writer);
+            } catch (Exception e) {
+                logger.warn("Error processing sentence: {}", e.getMessage());
+                writer.write("[ERROR: " + e.getMessage() + "]\n");
+            }
 
-                try {
-                    sentenceProcessor.accept(chunk, writer);
-                } catch (Exception e) {
-                    logger.warn("Error processing chunk: {}", e.getMessage());
-                    writer.write("[ERROR: " + e.getMessage() + "]\n");
+            sentenceCount++;
+
+            // Calculate progress based on bytes read
+            if (totalBytes > 0) {
+                int currentPercent = (int) ((bytesRead[0] * 100) / totalBytes);
+                // Log every 5% progress
+                if (currentPercent >= lastLoggedPercent + 5) {
+                    lastLoggedPercent = currentPercent;
+                    logger.warn(">>> [PROGRESS] <<< {}% (Processed {} sentences)", currentPercent, sentenceCount);
                 }
+            } else if (sentenceCount % 100 == 0) {
+                // Fallback if total size unknown
+                logger.warn("Processed {} sentences...", sentenceCount);
             }
         }
+        logger.warn(">>> [FINISHED] <<< Processed {} total sentences.", sentenceCount);
     }
 
     /**
@@ -241,7 +329,7 @@ public class TaskProcessor {
                 if (dependencyParser == null) {
                     logMemoryStatus("Before loading Dependency Parser");
                     logger.info("Loading Dependency Parser (model: {})...", DependencyParser.DEFAULT_MODEL);
-                    
+
                     long startTime = System.currentTimeMillis();
                     try {
                         dependencyParser = DependencyParser.loadFromModelFile(DependencyParser.DEFAULT_MODEL);
@@ -249,8 +337,9 @@ public class TaskProcessor {
                         logger.info("Dependency Parser loaded successfully in {} ms", elapsed);
                         logMemoryStatus("After loading Dependency Parser");
                     } catch (OutOfMemoryError e) {
-                        logger.error("OUT OF MEMORY loading Dependency Parser! Increase JVM heap size (-Xmx). Current max heap: {} MB",
-                            Runtime.getRuntime().maxMemory() / (1024 * 1024));
+                        logger.error(
+                                "OUT OF MEMORY loading Dependency Parser! Increase JVM heap size (-Xmx). Current max heap: {} MB",
+                                Runtime.getRuntime().maxMemory() / (1024 * 1024));
                         throw e;
                     }
                 }
@@ -292,8 +381,10 @@ public class TaskProcessor {
     }
 
     /**
-     * InputStream wrapper that tracks bytes read and logs progress at 10% intervals.
+     * InputStream wrapper that tracks bytes read and logs progress at 10%
+     * intervals.
      */
+    @SuppressWarnings("unused")
     private static class ProgressTrackingInputStream extends FilterInputStream {
         private final long totalBytes;
         private final String url;
@@ -345,15 +436,16 @@ public class TaskProcessor {
         }
 
         private void checkProgress() {
-            if (totalBytes <= 0) return; // Can't calculate progress without total size
-            
+            if (totalBytes <= 0)
+                return; // Can't calculate progress without total size
+
             int currentPercent = (int) ((bytesRead * 100) / totalBytes);
             int currentInterval = (currentPercent / LOG_INTERVAL) * LOG_INTERVAL;
-            
+
             if (currentInterval > lastLoggedPercent && currentInterval < 100) {
                 lastLoggedPercent = currentInterval;
-                logger.info("Processing {}: {}% complete ({}/{} bytes)", 
-                    url, currentInterval, bytesRead, totalBytes);
+                logger.info("Processing {}: {}% complete ({}/{} bytes)",
+                        url, currentInterval, bytesRead, totalBytes);
             }
         }
 
