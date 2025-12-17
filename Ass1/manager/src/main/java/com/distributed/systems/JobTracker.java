@@ -29,8 +29,8 @@ public class JobTracker {
     /**
      * Registers a new job
      */
-    public void registerJob(String jobId, String inputFileS3Key, int totalTasks, int n) {
-        JobInfo jobInfo = new JobInfo(jobId, inputFileS3Key, totalTasks, n);
+    public void registerJob(String jobId, int totalTasks, int n) {
+        JobInfo jobInfo = new JobInfo(jobId, totalTasks, n);
         jobs.put(jobId, jobInfo);
 
         // Calculate initial needed workers for this job
@@ -126,16 +126,14 @@ public class JobTracker {
      */
     public static class JobInfo {
         private final String jobId;
-        private final String inputFileS3Key;
         private final int totalTasks;
         private final int n;
         private final AtomicInteger completedTasks = new AtomicInteger(0);
 
         private int prevNeededWorkers = 0;
 
-        public JobInfo(String jobId, String inputFileS3Key, int totalTasks, int n) {
+        public JobInfo(String jobId, int totalTasks, int n) {
             this.jobId = jobId;
-            this.inputFileS3Key = inputFileS3Key;
             this.totalTasks = totalTasks;
             this.n = n;
         }
@@ -150,10 +148,6 @@ public class JobTracker {
 
         public String getJobId() {
             return jobId;
-        }
-
-        public String getInputFileS3Key() {
-            return inputFileS3Key;
         }
 
         public int getTotalTasks() {

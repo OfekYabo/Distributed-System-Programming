@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.model.Message;
 
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -28,9 +27,6 @@ public class WorkerResultsListener implements Runnable {
     private static final String WORKER_OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
     private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
-    private static final String S3_PREFIX_KEY = "S3_MANAGER_OUTPUT_PREFIX";
-    private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
-    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
 
     private final SqsService sqsService;
     private final S3Service s3Service;
@@ -41,9 +37,6 @@ public class WorkerResultsListener implements Runnable {
     private final String workerOutputQueue;
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
-    private final String s3ManagerPrefix;
-    private final String s3BucketName;
-    private final String localAppOutputQueue;
 
     public WorkerResultsListener(AppConfig config,
             SqsService sqsService,
@@ -59,9 +52,6 @@ public class WorkerResultsListener implements Runnable {
         this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
-        this.s3ManagerPrefix = config.getOptional(S3_PREFIX_KEY, "manager-output");
-        this.s3BucketName = config.getString(S3_BUCKET_KEY);
-        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
     }
 
     @Override
@@ -141,7 +131,6 @@ public class WorkerResultsListener implements Runnable {
 
         // Reconstruct reply queue URL: local-app-output-<jobId>
         String replyQueueUrl = "local-app-output-" + jobId;
-        String inputFileS3Key = jobInfo.getInputFileS3Key();
 
         try {
             // 1. Aggregate results from S3 Metadata
@@ -174,7 +163,8 @@ public class WorkerResultsListener implements Runnable {
 
             // 4. Send Response
             logger.info("Sending response to local app at {}", replyQueueUrl);
-            LocalAppResponse response = LocalAppResponse.taskComplete(inputFileS3Key, summaryKey);
+            // Use jobId as the identifier in response
+            LocalAppResponse response = LocalAppResponse.taskComplete(jobId, summaryKey);
 
             // Note: Manager needs permissions to send to this dynamically created queue
             // Ideally, LocalApp gave permissions or it's same account

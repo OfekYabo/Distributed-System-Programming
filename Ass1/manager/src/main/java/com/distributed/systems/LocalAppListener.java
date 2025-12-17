@@ -186,7 +186,7 @@ public class LocalAppListener implements Runnable {
             int totalTasks = taskMessages.size();
             // Register the job with the JobTracker
             // Queue URL is derived from Job ID
-            jobTracker.registerJob(jobId, inputFileS3Key, totalTasks, n);
+            jobTracker.registerJob(jobId, totalTasks, n);
 
             // Send tasks to worker queue
             for (WorkerTaskMessage taskMsg : taskMessages) {

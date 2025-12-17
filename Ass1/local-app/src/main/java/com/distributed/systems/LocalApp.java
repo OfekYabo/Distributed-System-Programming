@@ -38,7 +38,7 @@ public class LocalApp {
     private static final String AWS_REGION_KEY = "AWS_REGION";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
     private static final String LOCAL_APP_INPUT_QUEUE_KEY = "LOCAL_APP_INPUT_QUEUE";
-    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
+
     private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
     private static final String S3_INPUT_PREFIX_KEY = "S3_INPUT_PREFIX";
@@ -310,7 +310,7 @@ public class LocalApp {
 
                     if (response.isTaskComplete() &&
                             response.getData() != null &&
-                            inputS3Key.equals(response.getData().getInputFileS3Key())) {
+                            jobId.equals(response.getData().getJobId())) {
 
                         sqsService.deleteMessage(localAppOutputQueue, message);
                         logger.info("Response received after {} seconds",
@@ -319,7 +319,7 @@ public class LocalApp {
                     } else {
                         // This message is not for us, leave it in queue
                         logger.debug("Received response for different job: {}",
-                                response.getData() != null ? response.getData().getInputFileS3Key() : "null");
+                                response.getData() != null ? response.getData().getJobId() : "null");
                     }
                 } catch (Exception e) {
                     logger.warn("Failed to parse response message: {}", e.getMessage());

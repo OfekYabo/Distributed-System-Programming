@@ -43,13 +43,13 @@ public class LocalAppResponse {
         return TYPE_TASK_COMPLETE.equals(type);
     }
 
-    public static LocalAppResponse taskComplete(String inputFileS3Key, String summaryS3Key) {
-        return new LocalAppResponse(TYPE_TASK_COMPLETE, new ResponseData(inputFileS3Key, summaryS3Key));
+    public static LocalAppResponse taskComplete(String jobId, String summaryS3Key) {
+        return new LocalAppResponse(TYPE_TASK_COMPLETE, new ResponseData(jobId, summaryS3Key));
     }
 
     public static class ResponseData {
-        @JsonProperty("inputFileS3Key")
-        private String inputFileS3Key;
+        @JsonProperty("jobId")
+        private String jobId;
 
         @JsonProperty("summaryS3Key")
         private String summaryS3Key;
@@ -57,17 +57,17 @@ public class LocalAppResponse {
         public ResponseData() {
         }
 
-        public ResponseData(String inputFileS3Key, String summaryS3Key) {
-            this.inputFileS3Key = inputFileS3Key;
+        public ResponseData(String jobId, String summaryS3Key) {
+            this.jobId = jobId;
             this.summaryS3Key = summaryS3Key;
         }
 
-        public String getInputFileS3Key() {
-            return inputFileS3Key;
+        public String getJobId() {
+            return jobId;
         }
 
-        public void setInputFileS3Key(String inputFileS3Key) {
-            this.inputFileS3Key = inputFileS3Key;
+        public void setJobId(String jobId) {
+            this.jobId = jobId;
         }
 
         public String getSummaryS3Key() {
@@ -81,7 +81,7 @@ public class LocalAppResponse {
         @Override
         public String toString() {
             return "ResponseData{" +
-                    "inputFileS3Key='" + inputFileS3Key + '\'' +
+                    "jobId='" + jobId + '\'' +
                     ", summaryS3Key='" + summaryS3Key + '\'' +
                     '}';
         }

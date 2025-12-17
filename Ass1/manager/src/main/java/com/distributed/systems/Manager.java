@@ -112,7 +112,7 @@ public class Manager {
                 config, sqsService, s3Service, jobTracker, running, acceptingJobs, terminateRequested);
 
         // HtmlSummaryGenerator is static now
-        Runnable resultsListener = new WorkerResultsListener(config, sqsService, s3Service,
+        this.workerResultsListener = new WorkerResultsListener(config, sqsService, s3Service,
                 jobTracker, running);
 
         this.workerScaler = new WorkerScaler(
