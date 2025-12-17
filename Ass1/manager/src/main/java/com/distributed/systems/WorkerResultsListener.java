@@ -162,24 +162,6 @@ public class WorkerResultsListener implements Runnable {
 
             logger.info("Sent completion message to local app for job {}", inputFileS3Key);
 
-            // Cleanup: Delete worker result files from S3
-            logger.info("Cleaning up: Deleting worker result files for job {}...", inputFileS3Key);
-            for (JobTracker.TaskResult result : jobInfo.getResults()) {
-                if (result.isSuccess() && result.getOutputUrl() != null) {
-                    // Extract key from s3://bucket/key format
-                    String s3Url = result.getOutputUrl();
-                    String bucketPrefix = "s3://" + s3BucketName + "/";
-                    if (s3Url.startsWith(bucketPrefix)) {
-                        String key = s3Url.substring(bucketPrefix.length());
-                        try {
-                            s3Service.deleteFile(key);
-                        } catch (Exception e) {
-                            logger.warn("Failed to delete result file {}: {}", key, e.getMessage());
-                        }
-                    }
-                }
-            }
-
             // Remove the job from tracker
             jobTracker.removeJob(inputFileS3Key);
 
