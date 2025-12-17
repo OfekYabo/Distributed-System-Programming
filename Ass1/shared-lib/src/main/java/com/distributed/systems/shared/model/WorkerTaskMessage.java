@@ -23,8 +23,12 @@ public class WorkerTaskMessage {
         this.data = data;
     }
 
-    public static WorkerTaskMessage create(String parsingMethod, String url) {
-        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(parsingMethod, url));
+    public static WorkerTaskMessage create(String url, String parsingMethod) {
+        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(url, parsingMethod));
+    }
+
+    public static WorkerTaskMessage createWithRetry(String url, String parsingMethod, int retryCount) {
+        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(url, parsingMethod, retryCount));
     }
 
     public String getType() {
@@ -44,18 +48,31 @@ public class WorkerTaskMessage {
     }
 
     public static class TaskData {
+        public static final int MAX_RETRIES = 3;
+
         @JsonProperty("parsingMethod")
         private String parsingMethod; // POS, CONSTITUENCY, or DEPENDENCY
 
         @JsonProperty("url")
         private String url;
 
+        @JsonProperty("retryCount")
+        private int retryCount;
+
         public TaskData() {
+            this.retryCount = 0;
         }
 
-        public TaskData(String parsingMethod, String url) {
+        public TaskData(String url, String parsingMethod) {
             this.parsingMethod = parsingMethod;
             this.url = url;
+            this.retryCount = 0;
+        }
+
+        public TaskData(String url, String parsingMethod, int retryCount) {
+            this.parsingMethod = parsingMethod;
+            this.url = url;
+            this.retryCount = retryCount;
         }
 
         public String getParsingMethod() {
@@ -74,11 +91,28 @@ public class WorkerTaskMessage {
             this.url = url;
         }
 
+        public int getRetryCount() {
+            return retryCount;
+        }
+
+        public void setRetryCount(int retryCount) {
+            this.retryCount = retryCount;
+        }
+
+        public boolean hasExceededMaxRetries() {
+            return retryCount >= MAX_RETRIES;
+        }
+
+        public TaskData withIncrementedRetry() {
+            return new TaskData(this.url, this.parsingMethod, this.retryCount + 1);
+        }
+
         @Override
         public String toString() {
             return "TaskData{" +
                     "parsingMethod='" + parsingMethod + '\'' +
                     ", url='" + url + '\'' +
+                    ", retryCount=" + retryCount +
                     '}';
         }
     }
