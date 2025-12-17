@@ -52,7 +52,7 @@ public class Manager {
     private final String awsRegion;
     private final String s3BucketName;
     private final String localAppInputQueue;
-    private final String localAppOutputQueue;
+    // private final String localAppOutputQueue; // Removed as unused
     private final String workerInputQueue;
     private final String workerOutputQueue;
     private final String workerControlQueue;
@@ -85,7 +85,7 @@ public class Manager {
         this.awsRegion = config.getString(AWS_REGION_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
-        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
+        // this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
         this.workerInputQueue = config.getString(WORKER_INPUT_QUEUE_KEY);
         this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
         this.workerControlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
@@ -156,7 +156,9 @@ public class Manager {
     private void ensureQueuesExist() {
         // Ensure queues exist
         sqsService.createQueueIfNotExists(localAppInputQueue, visibilityTimeout, waitTimeSeconds);
-        sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout, waitTimeSeconds);
+        // Removed LOCAL_APP_OUTPUT_QUEUE as per user request (redundant)
+        // sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout,
+        // waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerInputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerOutputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerControlQueue, visibilityTimeout, waitTimeSeconds);
@@ -264,6 +266,79 @@ public class Manager {
         closeServices();
 
         logger.info("=== Manager Stopped ===");
+
+        // Self-Terminate EC2 Instance
+        terminateSelf();
+    }
+
+    private void terminateSelf() {
+        try {
+            String instanceId = retrieveInstanceId();
+            if (instanceId != null) {
+                logger.warn(">>> SELF-TERMINATING MANAGER INSTANCE: {} <<<", instanceId);
+                // Re-create EC2 client if services are closed?
+                // We closed services above. We should probably keep Ec2Service open or re-open.
+                // Or just move closeServices() after terminateSelf?
+                // But terminateSelf needs Ec2Service.
+                // Let's modify logic: call terminateSelf BEFORE closeServices,
+                // OR re-instantiate client.
+
+                // Since we closed services, let's just make a fresh client for the final kill
+                // command
+                // to be safe and independent of shared service state.
+                try (Ec2Client killerClient = Ec2Client.builder().region(Region.of(awsRegion)).build()) {
+                    Ec2Service killerService = new Ec2Service(killerClient);
+                    killerService.terminateInstance(instanceId);
+                }
+            } else {
+                logger.error("Could not retrieve instance ID. Exiting process only.");
+            }
+        } catch (Exception e) {
+            logger.error("Error during self-termination", e);
+        }
+    }
+
+    private String retrieveInstanceId() {
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(2))
+                    .build();
+
+            // Try IMDSv2 (Token-based)
+            String token = null;
+            try {
+                java.net.http.HttpRequest tokenRequest = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create("http://169.254.169.254/latest/api/token"))
+                        .header("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+                        .PUT(java.net.http.HttpRequest.BodyPublishers.noBody())
+                        .build();
+                java.net.http.HttpResponse<String> tokenResponse = client.send(tokenRequest,
+                        java.net.http.HttpResponse.BodyHandlers.ofString());
+                if (tokenResponse.statusCode() == 200) {
+                    token = tokenResponse.body();
+                }
+            } catch (Exception ignored) {
+                // Fallback to IMDSv1
+            }
+
+            // Get Instance ID (with token if available)
+            java.net.http.HttpRequest.Builder requestBuilder = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("http://169.254.169.254/latest/meta-data/instance-id"))
+                    .GET();
+
+            if (token != null) {
+                requestBuilder.header("X-aws-ec2-metadata-token", token);
+            }
+
+            java.net.http.HttpResponse<String> response = client.send(requestBuilder.build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return response.body();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to retrieve instance ID via IMDS: {}", e.getMessage());
+        }
+        return null;
     }
 
     /**
@@ -296,6 +371,8 @@ public class Manager {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Shutdown signal received");
             running.set(false);
+            // On SIGTERM (from AWS termination), we don't need to self-terminate again
+            // but for "nuclear option" consistency, it probably won't hurt if we try.
         }));
     }
 

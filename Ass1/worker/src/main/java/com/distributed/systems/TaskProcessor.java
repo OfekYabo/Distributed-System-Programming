@@ -163,7 +163,7 @@ public class TaskProcessor {
             }
 
             // 3. Upload result to S3
-            String s3Key = generateS3Key(url, method);
+            String s3Key = generateS3Key(url, method, taskData.getJobId());
             s3Service.uploadFile(outputPath, s3Key);
 
             String s3Url = "s3://" + s3BucketName + "/" + s3Key;
@@ -382,12 +382,13 @@ public class TaskProcessor {
 
     // --- Output Naming Utilities ---
 
-    private String generateS3Key(String originalUrl, String method) {
-        String timestamp = String.valueOf(Instant.now().toEpochMilli());
+    private String generateS3Key(String originalUrl, String method, String jobId) {
         String filename = extractFilename(originalUrl);
+        // Use configured prefix (e.g. "workers-results") + jobId + filename
+        // Result: workers-results/JOB_ID/method-filename.txt
         return String.format("%s/%s/%s-%s.txt",
                 s3ResultsPrefix,
-                timestamp, method, filename);
+                jobId, method, filename);
     }
 
     private String extractFilename(String url) {
