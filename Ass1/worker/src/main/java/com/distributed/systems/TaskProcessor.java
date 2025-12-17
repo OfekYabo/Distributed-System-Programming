@@ -86,8 +86,9 @@ public class TaskProcessor {
     /**
      * Processes a task by streaming data from the URL, parsing it, and uploading
      * the result.
+     * Tasks can run as long as needed - heartbeat mechanism keeps the message invisible.
      */
-    public String processTask(WorkerTaskMessage.TaskData taskData, long deadlineEpochMillis) throws Exception {
+    public String processTask(WorkerTaskMessage.TaskData taskData, long ignoredDeadline) throws Exception {
         String url = taskData.getUrl();
         String method = taskData.getParsingMethod();
         logger.info("Processing task: URL={}, Method={}", url, method);
@@ -159,7 +160,7 @@ public class TaskProcessor {
             try (InputStream inStream = processingStream;
                     BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
-                processStream(inStream, writer, method, totalSize, deadlineEpochMillis);
+                processStream(inStream, writer, method, totalSize);
             }
 
             // 3. Upload result to S3
@@ -185,10 +186,9 @@ public class TaskProcessor {
 
     /**
      * Core processing loop. Reads sentences from stream and applies appropriate
-     * parser.
+     * parser. No timeout - tasks can run as long as needed.
      */
-    private void processStream(InputStream input, BufferedWriter writer, String method, long totalBytes,
-            long deadlineEpochMillis)
+    private void processStream(InputStream input, BufferedWriter writer, String method, long totalBytes)
             throws Exception {
         // Prepare the specific processor logic based on method
         BiConsumer<List<HasWord>, BufferedWriter> sentenceProcessor = getSentenceProcessor(method);
@@ -220,28 +220,12 @@ public class TaskProcessor {
         int lastLoggedPercent = 0;
 
         for (List<HasWord> sentence : dp) {
-            // Check for Hard Deadline (in case interrupt is swallowed)
-            if (System.currentTimeMillis() > deadlineEpochMillis) {
-                logger.error(">>> [HARD DEADLINE EXCEEDED] <<< Stopping processing loop.");
-                throw new java.util.concurrent.TimeoutException("Hard deadline exceeded");
-            }
-
-            // Check for interruption (e.g. timeout)
-            if (Thread.currentThread().isInterrupted()) {
-                logger.warn(">>> [WORKER INTERRUPTED] <<< Stopping processing loop.");
-                throw new InterruptedException("Task interrupted");
-            }
-
             if (sentence == null || sentence.isEmpty())
                 continue;
 
             try {
                 sentenceProcessor.accept(sentence, writer);
             } catch (Exception e) {
-                // If it's the InterruptedException we just threw (wrapped), rethrow it
-                if (e.getCause() instanceof InterruptedException || e instanceof InterruptedException) {
-                    throw (Exception) e; // Stop processing
-                }
                 logger.warn("Error processing sentence: {}", e.getMessage());
                 writer.write("[ERROR: " + e.getMessage() + "]\n");
             }
@@ -254,14 +238,14 @@ public class TaskProcessor {
                 // Log every 5% progress
                 if (currentPercent >= lastLoggedPercent + 5) {
                     lastLoggedPercent = currentPercent;
-                    logger.warn(">>> [PROGRESS] <<< {}% (Processed {} sentences)", currentPercent, sentenceCount);
+                    logger.info(">>> [PROGRESS] <<< {}% (Processed {} sentences)", currentPercent, sentenceCount);
                 }
             } else if (sentenceCount % 100 == 0) {
                 // Fallback if total size unknown
-                logger.warn("Processed {} sentences...", sentenceCount);
+                logger.info("Processed {} sentences...", sentenceCount);
             }
         }
-        logger.warn(">>> [FINISHED] <<< Processed {} total sentences.", sentenceCount);
+        logger.info(">>> [FINISHED] <<< Processed {} total sentences.", sentenceCount);
     }
 
     /**

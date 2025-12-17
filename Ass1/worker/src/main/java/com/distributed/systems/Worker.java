@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.sqs.model.Message;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Worker main class
@@ -32,8 +33,8 @@ public class Worker {
     private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
     private static final String MAX_MESSAGES_KEY = "WORKER_MAX_MESSAGES";
-
     private static final String IDLE_SHUTDOWN_KEY = "WORKER_IDLE_SHUTDOWN_SECONDS";
+    private static final String HEARTBEAT_INTERVAL_KEY = "WORKER_HEARTBEAT_INTERVAL_SECONDS";
 
     private final SqsService sqsService;
     private final S3Service s3Service;
@@ -49,6 +50,10 @@ public class Worker {
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
     private final int idleShutdownSeconds;
+    private final int heartbeatIntervalSeconds;
+
+    // Scheduled executor for heartbeats
+    private final ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
 
     public Worker(AppConfig config) {
         this.running = new AtomicBoolean(true);
@@ -60,8 +65,10 @@ public class Worker {
         this.outputQueue = config.getString(OUTPUT_QUEUE_KEY);
         this.maxMessages = config.getIntOptional(MAX_MESSAGES_KEY, 1);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
-        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 90);
+        this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 300); // Default 5 minutes
         this.idleShutdownSeconds = config.getIntOptional(IDLE_SHUTDOWN_KEY, 60); // Default 60s idle timeout
+        // Heartbeat interval should be less than visibility timeout (e.g., half)
+        this.heartbeatIntervalSeconds = config.getIntOptional(HEARTBEAT_INTERVAL_KEY, visibilityTimeout / 2);
 
         // Initialize AWS clients
         SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
@@ -124,13 +131,20 @@ public class Worker {
         cleanup();
     }
 
-    private ExecutorService taskExecutor = Executors.newSingleThreadExecutor();
-
     /**
-     * Processes a single message
+     * Processes a single message with heartbeat mechanism and error-based re-queuing.
+     * 
+     * - Tasks can run as long as needed (no timeout)
+     * - Heartbeat periodically extends visibility to prevent message becoming visible
+     * - On error: re-queue with incremented retry count
+     * - After MAX_RETRIES: send permanent error response
      */
     private void processMessage(Message message) {
         logger.info("Processing message: {}", message.messageId());
+
+        WorkerTaskMessage.TaskData taskData = null;
+        ScheduledFuture<?> heartbeatTask = null;
+        final AtomicReference<String> receiptHandleRef = new AtomicReference<>(message.receiptHandle());
 
         try {
             // Parse the message
@@ -139,63 +153,105 @@ public class Worker {
 
             // Validate message type
             if (!WorkerTaskMessage.TYPE_URL_PARSE_REQUEST.equals(taskMessage.getType())) {
-                logger.warn("Unknown message type: {}, ignoring", taskMessage.getType());
+                logger.warn("Unknown message type: {}, deleting", taskMessage.getType());
                 sqsService.deleteMessage(inputQueue, message);
                 return;
             }
 
-            // Validate parsing method
-            WorkerTaskMessage.TaskData taskData = taskMessage.getData();
+            taskData = taskMessage.getData();
+
+            // Validate parsing method (permanent error - don't retry)
             if (!TaskProcessor.isValidParsingMethod(taskData.getParsingMethod())) {
                 String error = "Invalid parsing method: " + taskData.getParsingMethod();
                 logger.error(error);
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), error);
+                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), error, taskData.getRetryCount());
                 sqsService.deleteMessage(inputQueue, message);
                 return;
             }
 
-            // Process the task with timeout
-            long timeoutSeconds = Math.max(10, visibilityTimeout - 10);
-            long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000);
+            logger.info("Starting task: url={}, method={}, retryCount={}", 
+                    taskData.getUrl(), taskData.getParsingMethod(), taskData.getRetryCount());
 
-            Future<String> future = null;
-            try {
-                future = taskExecutor.submit(() -> taskProcessor.processTask(taskData, deadline));
+            // Start heartbeat - periodically extend visibility timeout
+            heartbeatTask = startHeartbeat(receiptHandleRef);
 
-                // Wait for slightly less than visibility timeout to handle it before SQS does
-                String s3Url = future.get(timeoutSeconds, TimeUnit.SECONDS);
+            // Process the task (NO TIMEOUT - can run as long as needed)
+            String s3Url = taskProcessor.processTask(taskData, Long.MAX_VALUE);
 
-                // Send success response
-                sendSuccessResponse(taskData.getUrl(), s3Url, taskData.getParsingMethod());
-
-                // Delete message from queue (only after successful processing)
-                sqsService.deleteMessage(inputQueue, message);
-
-            } catch (TimeoutException e) {
-                if (future != null)
-                    future.cancel(true); // Attempt to interrupt
-                logger.error("Task timed out after {} seconds. Killing zombie thread.",
-                        Math.max(10, visibilityTimeout - 10), e);
-
-                // Nuclear Option: Kill the executor service to abandon the stuck thread
-                taskExecutor.shutdownNow();
-                taskExecutor = Executors.newSingleThreadExecutor();
-                logger.warn("ExecutorService restarted to clear stuck thread.");
-
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), "Task Timed Out");
-                sqsService.deleteMessage(inputQueue, message); // Delete so we don't retry forever
-            } catch (ExecutionException e) {
-                logger.error("Failed to process task", e.getCause());
-                String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), errorMsg);
-                sqsService.deleteMessage(inputQueue, message);
-            } catch (InterruptedException e) {
-                logger.error("Worker interrupted while waiting for task", e);
-                Thread.currentThread().interrupt();
-            }
+            // Success! Stop heartbeat, send response, delete message
+            stopHeartbeat(heartbeatTask);
+            sendSuccessResponse(taskData.getUrl(), s3Url, taskData.getParsingMethod());
+            sqsService.deleteMessage(inputQueue, message);
+            logger.info("Task completed successfully: {}", taskData.getUrl());
 
         } catch (Exception e) {
-            logger.error("Failed to parse or handle message", e);
+            // Stop heartbeat first
+            stopHeartbeat(heartbeatTask);
+
+            logger.error("Task failed with error: {}", e.getMessage(), e);
+
+            if (taskData != null) {
+                handleTaskError(message, taskData, e);
+            } else {
+                // Couldn't even parse the message - delete it to prevent infinite loop
+                logger.error("Could not parse message, deleting to prevent infinite retry");
+                sqsService.deleteMessage(inputQueue, message);
+            }
+        }
+    }
+
+    /**
+     * Handles task errors by either re-queuing or marking as permanent failure
+     */
+    private void handleTaskError(Message originalMessage, WorkerTaskMessage.TaskData taskData, Exception error) {
+        String errorMsg = error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName();
+
+        if (taskData.hasExceededMaxRetries()) {
+            // Max retries exceeded - permanent failure
+            logger.error("Task permanently failed after {} retries: {} / {}", 
+                    WorkerTaskMessage.TaskData.MAX_RETRIES, taskData.getUrl(), taskData.getParsingMethod());
+            sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), errorMsg, taskData.getRetryCount());
+            sqsService.deleteMessage(inputQueue, originalMessage);
+        } else {
+            // Re-queue with incremented retry count
+            int nextRetry = taskData.getRetryCount() + 1;
+            logger.warn("Re-queuing task for retry {}/{}: {} / {} - Error: {}", 
+                    nextRetry, WorkerTaskMessage.TaskData.MAX_RETRIES,
+                    taskData.getUrl(), taskData.getParsingMethod(), errorMsg);
+
+            WorkerTaskMessage retryMessage = WorkerTaskMessage.createWithRetry(
+                    taskData.getUrl(), taskData.getParsingMethod(), nextRetry);
+            sqsService.sendMessage(inputQueue, retryMessage);
+            
+            // Delete original message (we've re-queued a new one)
+            sqsService.deleteMessage(inputQueue, originalMessage);
+        }
+    }
+
+    /**
+     * Starts the heartbeat scheduler to periodically extend message visibility
+     */
+    private ScheduledFuture<?> startHeartbeat(AtomicReference<String> receiptHandleRef) {
+        logger.debug("Starting heartbeat with interval {} seconds", heartbeatIntervalSeconds);
+        
+        return heartbeatScheduler.scheduleAtFixedRate(() -> {
+            try {
+                String receiptHandle = receiptHandleRef.get();
+                sqsService.changeMessageVisibility(inputQueue, receiptHandle, visibilityTimeout);
+                logger.debug("Heartbeat: extended visibility timeout to {} seconds", visibilityTimeout);
+            } catch (Exception e) {
+                logger.warn("Heartbeat failed to extend visibility: {}", e.getMessage());
+            }
+        }, heartbeatIntervalSeconds, heartbeatIntervalSeconds, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Stops the heartbeat task
+     */
+    private void stopHeartbeat(ScheduledFuture<?> heartbeatTask) {
+        if (heartbeatTask != null && !heartbeatTask.isCancelled()) {
+            heartbeatTask.cancel(false);
+            logger.debug("Heartbeat stopped");
         }
     }
 
@@ -208,10 +264,11 @@ public class Worker {
     }
 
     /**
-     * Sends an error response message
+     * Sends an error response message (only after max retries exceeded)
      */
-    private void sendErrorResponse(String fileUrl, String parsingMethod, String error) {
-        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error);
+    private void sendErrorResponse(String fileUrl, String parsingMethod, String error, int retryCount) {
+        String fullError = String.format("%s (after %d retries)", error, retryCount);
+        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, fullError);
         sqsService.sendMessage(outputQueue, result);
     }
 
@@ -241,7 +298,7 @@ public class Worker {
      */
     private void cleanup() {
         try {
-            taskExecutor.shutdownNow();
+            heartbeatScheduler.shutdownNow();
             sqsService.close();
             s3Service.close();
             logger.info("Cleanup completed");

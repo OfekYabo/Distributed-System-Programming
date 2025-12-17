@@ -170,6 +170,28 @@ public class SqsService implements AutoCloseable {
     }
 
     /**
+     * Extends the visibility timeout of a message (heartbeat).
+     * Call this periodically while processing long-running tasks to prevent
+     * the message from becoming visible to other consumers.
+     *
+     * @param queueName        The queue name
+     * @param receiptHandle    The receipt handle of the message
+     * @param visibilityTimeout New visibility timeout in seconds (0-43200)
+     */
+    public void changeMessageVisibility(String queueName, String receiptHandle, int visibilityTimeout) {
+        String queueUrl = getQueueUrl(queueName);
+
+        ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
+                .queueUrl(queueUrl)
+                .receiptHandle(receiptHandle)
+                .visibilityTimeout(visibilityTimeout)
+                .build();
+
+        sqsClient.changeMessageVisibility(request);
+        logger.debug("Extended visibility timeout for message in queue {} to {} seconds", queueName, visibilityTimeout);
+    }
+
+    /**
      * Parses a message body into the specified type.
      */
     public <T> T parseMessage(String messageBody, Class<T> clazz) {
