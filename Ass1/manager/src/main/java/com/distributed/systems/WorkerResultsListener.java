@@ -3,8 +3,12 @@ package com.distributed.systems;
 import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.LocalAppResponse;
 import com.distributed.systems.shared.model.WorkerTaskResult;
+import com.distributed.systems.shared.model.TaskResultMetadata;
 import com.distributed.systems.shared.service.S3Service;
 import com.distributed.systems.shared.service.SqsService;
+
+import java.util.List;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.sqs.model.Message;
@@ -101,28 +105,16 @@ public class WorkerResultsListener implements Runnable {
 
             String completedJobKey;
 
+            // Legacy logging/tracking removed in favor of handleResult
             if (data.isSuccess()) {
                 logger.info("Worker success: {} / {} -> {}",
                         data.getFileUrl(), data.getParsingMethod(), data.getOutputUrl());
-
-                completedJobKey = jobTracker.recordSuccess(
-                        data.getFileUrl(),
-                        data.getParsingMethod(),
-                        data.getOutputUrl());
             } else {
                 logger.warn("Worker error: {} / {} - {}",
                         data.getFileUrl(), data.getParsingMethod(), data.getErrorMessage());
-
-                completedJobKey = jobTracker.recordError(
-                        data.getFileUrl(),
-                        data.getParsingMethod(),
-                        data.getErrorMessage());
             }
 
-            // If a job was completed, generate and upload summary
-            if (completedJobKey != null) {
-                handleJobCompletion(completedJobKey);
-            }
+            handleResult(result);
 
             // Delete the message after successful processing
             sqsService.deleteMessage(workerOutputQueue, message);
@@ -133,40 +125,92 @@ public class WorkerResultsListener implements Runnable {
         }
     }
 
+    private void handleResult(WorkerTaskResult result) {
+        WorkerTaskResult.ResultData data = result.getData();
+        if (data == null) {
+            logger.warn("Received empty result data");
+            return;
+        }
+
+        String jobId = data.getJobId();
+        // Since we are stateless, we need a way to find the inputFileS3Key from the
+        // JobId?
+        // JobInfo now has JobId. We can search active jobs by JobId.
+        String inputFileS3Key = jobTracker.findInputFileKeyByJobId(jobId);
+
+        if (inputFileS3Key == null) {
+            logger.warn("Received result for unknown Job ID: {}", jobId);
+            return;
+        }
+
+        String completedReq = null;
+
+        if (data.isSuccess()) {
+            completedReq = jobTracker.recordSuccess(inputFileS3Key);
+        } else {
+            completedReq = jobTracker.recordError(inputFileS3Key);
+        }
+
+        if (completedReq != null) {
+            handleJobCompletion(completedReq);
+        }
+    }
+
     /**
-     * Handles job completion - generates summary and notifies local app
+     * Handles the completion of a job
      */
     private void handleJobCompletion(String inputFileS3Key) {
+        logger.info("Handling job completion: {}", inputFileS3Key);
+
+        JobTracker.JobInfo jobInfo = jobTracker.getJob(inputFileS3Key);
+        if (jobInfo == null) {
+            logger.error("Job info not found for completed job: {}", inputFileS3Key);
+            return;
+        }
+
+        String replyQueueUrl = jobInfo.getReplyQueueUrl();
+        String jobId = jobInfo.getJobId();
+
         try {
-            JobTracker.JobInfo jobInfo = jobTracker.getJob(inputFileS3Key);
-            if (jobInfo == null) {
-                logger.error("Job not found for completion: {}", inputFileS3Key);
-                return;
+            // 1. Aggregate results from S3 Metadata
+            logger.info("Aggregating results from S3 for JobId: {}", jobId);
+            String metadataPrefix = "results/" + jobId + "/metadata/";
+            List<String> metadataKeys = s3Service.listObjects(metadataPrefix);
+
+            List<TaskResultMetadata> aggregatedResults = new ArrayList<>();
+            for (String key : metadataKeys) {
+                try {
+                    String json = s3Service.downloadAsString(key);
+                    TaskResultMetadata meta = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .readValue(json, TaskResultMetadata.class);
+                    aggregatedResults.add(meta);
+
+                    // Optional: Delete metadata file after reading
+                    s3Service.deleteFile(key);
+                } catch (Exception e) {
+                    logger.warn("Failed to process metadata for key {}: {}", key, e.getMessage());
+                }
             }
+            // Also clean up the metadata folder if empty? (S3 folders are virtual)
 
-            // Generate HTML summary
-            String html = htmlGenerator.generateSummary(jobInfo.getResults());
+            // 2. Generate Summary
+            logger.info("Generating HTML summary...");
+            String summaryHtml = HtmlSummaryGenerator.generateHtml(aggregatedResults);
 
-            // Upload to S3
-            String summaryKey = String.format("%s/summary-%d.html",
-                    s3ManagerPrefix, System.currentTimeMillis());
-            String summaryS3Key = s3Service.uploadString(summaryKey, html, "text/html");
+            // 3. Upload Summary
+            String summaryKey = "output/" + jobId + "_summary.html";
+            s3Service.uploadString(summaryKey, summaryHtml, "text/html");
 
-            logger.info("Uploaded summary for job {} to {}", inputFileS3Key, summaryS3Key);
+            // 4. Send Response
+            logger.info("Sending response to local app...");
+            LocalAppResponse response = LocalAppResponse.taskComplete(inputFileS3Key, summaryKey);
+            sqsService.sendMessage(replyQueueUrl, response);
 
-            // Send response to local application
-            LocalAppResponse response = new LocalAppResponse(
-                    LocalAppResponse.TYPE_TASK_COMPLETE,
-                    new LocalAppResponse.ResponseData(inputFileS3Key, summaryKey));
-            sqsService.sendMessage(localAppOutputQueue, response);
-
-            logger.info("Sent completion message to local app for job {}", inputFileS3Key);
-
-            // Remove the job from tracker
+            // 5. Cleanup Job
             jobTracker.removeJob(inputFileS3Key);
 
         } catch (Exception e) {
-            logger.error("Failed to handle job completion for {}: {}", inputFileS3Key, e.getMessage());
+            logger.error("Failed to handle job completion", e);
         }
     }
 

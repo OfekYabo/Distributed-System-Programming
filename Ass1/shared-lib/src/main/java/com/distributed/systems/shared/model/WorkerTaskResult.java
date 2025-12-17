@@ -23,14 +23,15 @@ public class WorkerTaskResult {
         this.data = data;
     }
 
-    public static WorkerTaskResult createSuccess(String fileUrl, String outputUrl, String parsingMethod) {
+    public static WorkerTaskResult createSuccess(String fileUrl, String outputUrl, String parsingMethod, String jobId) {
         return new WorkerTaskResult(TYPE_URL_PARSE_RESPONSE,
-                new ResultData(fileUrl, outputUrl, parsingMethod, true, null));
+                new ResultData(fileUrl, outputUrl, parsingMethod, true, null, jobId));
     }
 
-    public static WorkerTaskResult createError(String fileUrl, String parsingMethod, String errorMessage) {
+    public static WorkerTaskResult createError(String fileUrl, String parsingMethod, String errorMessage,
+            String jobId) {
         return new WorkerTaskResult(TYPE_URL_PARSE_RESPONSE,
-                new ResultData(fileUrl, null, parsingMethod, false, errorMessage));
+                new ResultData(fileUrl, null, parsingMethod, false, errorMessage, jobId));
     }
 
     public String getType() {
@@ -65,16 +66,20 @@ public class WorkerTaskResult {
         @JsonProperty("errorMessage")
         private String errorMessage;
 
+        @JsonProperty("jobId")
+        private String jobId;
+
         public ResultData() {
         }
 
         public ResultData(String fileUrl, String outputUrl, String parsingMethod, boolean success,
-                String errorMessage) {
+                String errorMessage, String jobId) {
             this.fileUrl = fileUrl;
             this.outputUrl = outputUrl;
             this.parsingMethod = parsingMethod;
             this.success = success;
             this.errorMessage = errorMessage;
+            this.jobId = jobId;
         }
 
         public String getFileUrl() {
@@ -115,6 +120,14 @@ public class WorkerTaskResult {
 
         public void setErrorMessage(String errorMessage) {
             this.errorMessage = errorMessage;
+        }
+
+        public String getJobId() {
+            return jobId;
+        }
+
+        public void setJobId(String jobId) {
+            this.jobId = jobId;
         }
 
         @Override

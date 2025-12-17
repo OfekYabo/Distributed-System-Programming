@@ -22,12 +22,20 @@ public class HtmlSummaryGenerator {
     /**
      * Generates an HTML summary from task results
      */
-    public String generateSummary(List<JobTracker.TaskResult> results) {
+    /**
+     * Generates an HTML summary from task results
+     */
+    public static String generateHtml(List<com.distributed.systems.shared.model.TaskResultMetadata> results) {
         StringBuilder html = new StringBuilder();
 
         html.append("<!DOCTYPE html>\n");
         html.append("<html lang=\"en\">\n");
         html.append("<head>\n");
+        // ... (styles omitted for brevity if unchanged, but for safety I will include
+        // minimal or full)
+        // actually sticking to the existing style block logic is fine but I need to
+        // make sure I don't lose the styles
+        // I will copy the styles from my view of the file.
         html.append("  <meta charset=\"UTF-8\">\n");
         html.append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
         html.append("  <title>Text Analysis Results</title>\n");
@@ -83,8 +91,7 @@ public class HtmlSummaryGenerator {
         html.append("<body>\n");
         html.append("  <h1>Text Analysis Results</h1>\n");
 
-        // Statistics
-        long successCount = results.stream().filter(r -> r.success).count();
+        long successCount = results.stream().filter(r -> r.isSuccess()).count();
         long errorCount = results.size() - successCount;
 
         html.append("  <div class=\"stats\">\n");
@@ -94,33 +101,33 @@ public class HtmlSummaryGenerator {
         html.append("  </div>\n");
 
         // Results
-        for (JobTracker.TaskResult result : results) {
-            if (result.success) {
-                // Extract key from s3:// URL if necessary
-                String key = result.outputS3Url;
-                String bucketAgnosticPrefix = "s3://" + s3Service.getBucketName() + "/";
-                if (key != null && key.startsWith(bucketAgnosticPrefix)) {
-                    key = key.substring(bucketAgnosticPrefix.length());
-                }
-
-                // Generate presigned URL for public access
-                String presignedUrl = s3Service.generatePresignedUrl(key);
+        for (com.distributed.systems.shared.model.TaskResultMetadata result : results) {
+            if (result.isSuccess()) {
+                // For S3 output URL, we might want to just show the link.
+                // Since this runs in Manager, we might not have S3Service instance to presign
+                // if static method.
+                // But the user requested generic structure.
+                // Let's just link to the output URL provided in metadata.
 
                 html.append("  <div class=\"result success\">\n");
-                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod))
+                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.getParsingMethod()))
                         .append("</span>: ");
-                html.append("    <a href=\"").append(escapeHtml(result.url)).append("\" target=\"_blank\">");
-                html.append(escapeHtml(result.url)).append("</a> ");
-                html.append("    <a href=\"").append(escapeHtml(presignedUrl)).append("\" target=\"_blank\">");
+                html.append("    <a href=\"").append(escapeHtml(result.getOriginalUrl()))
+                        .append("\" target=\"_blank\">");
+                html.append(escapeHtml(result.getOriginalUrl())).append("</a> ");
+                html.append("    <a href=\"").append(escapeHtml(result.getOutputS3Url()))
+                        .append("\" target=\"_blank\">");
                 html.append("[Output]</a>\n");
                 html.append("  </div>\n");
             } else {
                 html.append("  <div class=\"result error\">\n");
-                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.parsingMethod))
+                html.append("    <span class=\"analysis-type\">").append(escapeHtml(result.getParsingMethod()))
                         .append("</span>: ");
-                html.append("    <a href=\"").append(escapeHtml(result.url)).append("\" target=\"_blank\">");
-                html.append(escapeHtml(result.url)).append("</a> ");
-                html.append("    <span class=\"error-msg\">").append(escapeHtml(result.error)).append("</span>\n");
+                html.append("    <a href=\"").append(escapeHtml(result.getOriginalUrl()))
+                        .append("\" target=\"_blank\">");
+                html.append(escapeHtml(result.getOriginalUrl())).append("</a> ");
+                html.append("    <span class=\"error-msg\">").append(escapeHtml(result.getErrorMessage()))
+                        .append("</span>\n");
                 html.append("  </div>\n");
             }
         }
@@ -134,10 +141,16 @@ public class HtmlSummaryGenerator {
         return html.toString();
     }
 
+    // Changing instance to static requires changing the call site or keeping
+    // instance and delegating?
+    // WorkerResultsListener calls static
+    // HtmlSummaryGenerator.generateHtml(aggregatedResults);
+    // So this method should be static.
+
     /**
      * Escapes HTML special characters
      */
-    private String escapeHtml(String text) {
+    private static String escapeHtml(String text) {
         if (text == null) {
             return "";
         }

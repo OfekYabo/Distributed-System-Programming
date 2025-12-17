@@ -148,8 +148,10 @@ public class LocalAppListener implements Runnable {
 
         String inputFileS3Key = data.getInputFileS3Key();
         int n = data.getN() > 0 ? data.getN() : 1;
-
-        logger.info("Processing new task: {} (n={})", inputFileS3Key, n);
+        String replyQueueUrl = request.getData().getReplyQueueUrl();
+        String jobId = request.getData().getJobId();
+        logger.info("New task received. Input: {}, N: {}, ReplyQueue: {}, JobID: {}",
+                inputFileS3Key, n, replyQueueUrl, jobId);
 
         try {
             // Download the input file from S3
@@ -158,7 +160,9 @@ public class LocalAppListener implements Runnable {
             logger.info("Downloaded input file with {} lines", lines.size());
 
             // Parse the input file and create tasks
-            List<JobTracker.TaskInfo> tasks = new ArrayList<>();
+            // Parse the input file and create tasks
+            List<WorkerTaskMessage> taskMessages = new ArrayList<>();
+            String currentJobId = data.getJobId();
 
             for (String line : lines) {
                 String[] parts = line.split("\t");
@@ -167,27 +171,26 @@ public class LocalAppListener implements Runnable {
                     String url = parts[1].trim();
 
                     if (!parsingMethod.isEmpty() && !url.isEmpty()) {
-                        tasks.add(new JobTracker.TaskInfo(url, parsingMethod));
+                        taskMessages.add(WorkerTaskMessage.createTask(parsingMethod, url, currentJobId));
                     }
                 }
             }
 
-            if (tasks.isEmpty()) {
+            if (taskMessages.isEmpty()) {
                 logger.warn("No valid tasks found in input file: {}", inputFileS3Key);
                 sqsService.deleteMessage(inputQueueUrl, message);
                 return;
             }
 
             // Register the job with the tracker
-            jobTracker.registerJob(inputFileS3Key, tasks, n);
+            jobTracker.registerJob(inputFileS3Key, taskMessages.size(), n, data.getReplyQueueUrl(), currentJobId);
 
             // Send tasks to worker queue
-            for (JobTracker.TaskInfo task : tasks) {
-                WorkerTaskMessage taskMessage = WorkerTaskMessage.create(task.parsingMethod, task.url);
-                sqsService.sendMessage(workerQueueUrl, taskMessage);
+            for (WorkerTaskMessage taskMsg : taskMessages) {
+                sqsService.sendMessage(workerQueueUrl, taskMsg);
             }
 
-            logger.info("Sent {} tasks to worker queue for job {}", tasks.size(), inputFileS3Key);
+            logger.info("Sent {} tasks to worker queue for job {}", taskMessages.size(), inputFileS3Key);
 
             // Delete the original message
             sqsService.deleteMessage(inputQueueUrl, message);

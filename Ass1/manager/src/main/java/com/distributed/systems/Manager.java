@@ -35,6 +35,7 @@ public class Manager {
     private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
     private static final String WORKER_INPUT_QUEUE_KEY = "WORKER_INPUT_QUEUE";
     private static final String WORKER_OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
+    private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
     private static final String WAIT_TIME_KEY = "WAIT_TIME_SECONDS";
     private static final String IDLE_TIMEOUT_KEY = "MANAGER_IDLE_TIMEOUT_MINUTES";
@@ -54,6 +55,7 @@ public class Manager {
     private final String localAppOutputQueue;
     private final String workerInputQueue;
     private final String workerOutputQueue;
+    private final String workerControlQueue;
     private final int visibilityTimeout;
     private final int waitTimeSeconds;
     private final int idleTimeoutMinutes;
@@ -87,6 +89,7 @@ public class Manager {
         this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
         this.workerInputQueue = config.getString(WORKER_INPUT_QUEUE_KEY);
         this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
+        this.workerControlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.idleTimeoutMinutes = config.getIntOptional(IDLE_TIMEOUT_KEY, 30);
@@ -158,6 +161,7 @@ public class Manager {
         sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerInputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerOutputQueue, visibilityTimeout, waitTimeSeconds);
+        sqsService.createQueueIfNotExists(workerControlQueue, visibilityTimeout, waitTimeSeconds);
     }
 
     /**

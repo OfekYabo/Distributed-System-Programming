@@ -170,6 +170,25 @@ public class SqsService implements AutoCloseable {
     }
 
     /**
+     * Deletes a queue by name.
+     */
+    public void deleteQueue(String queueName) {
+        try {
+            String queueUrl = getQueueUrl(queueName);
+            DeleteQueueRequest request = DeleteQueueRequest.builder()
+                    .queueUrl(queueUrl)
+                    .build();
+
+            sqsClient.deleteQueue(request);
+            queueUrlCache.remove(queueName);
+            logger.info("Deleted queue: {}", queueName);
+        } catch (Exception e) {
+            logger.error("Failed to delete queue {}: {}", queueName, e.getMessage());
+            // Don't throw, just log
+        }
+    }
+
+    /**
      * Parses a message body into the specified type.
      */
     public <T> T parseMessage(String messageBody, Class<T> clazz) {

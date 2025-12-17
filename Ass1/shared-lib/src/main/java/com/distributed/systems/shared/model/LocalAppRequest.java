@@ -2,6 +2,7 @@ package com.distributed.systems.shared.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
 
 /**
  * Message sent from Local Application to Manager
@@ -17,20 +18,33 @@ public class LocalAppRequest {
     @JsonProperty("data")
     private RequestData data;
 
+    @JsonProperty("jobId")
+    private String jobId;
+
     public LocalAppRequest() {
     }
 
     public LocalAppRequest(String type, RequestData data) {
         this.type = type;
         this.data = data;
+        // jobId will be set via data if it's a newTask, or remain null for terminate
+        if (data != null) {
+            this.jobId = data.getJobId();
+        }
     }
 
-    public static LocalAppRequest newTask(String inputFileS3Key, int n) {
-        return new LocalAppRequest(TYPE_NEW_TASK, new RequestData(inputFileS3Key, n));
+    public LocalAppRequest(String type, RequestData data, String jobId) {
+        this.type = type;
+        this.data = data;
+        this.jobId = jobId;
+    }
+
+    public static LocalAppRequest newTask(String inputFileS3Key, int n, String replyQueueUrl, String jobId) {
+        return new LocalAppRequest(TYPE_NEW_TASK, new RequestData(inputFileS3Key, n, replyQueueUrl, jobId), jobId);
     }
 
     public static LocalAppRequest terminate() {
-        return new LocalAppRequest(TYPE_TERMINATE, null);
+        return new LocalAppRequest(TYPE_TERMINATE, null, null);
     }
 
     public String getType() {
@@ -47,6 +61,14 @@ public class LocalAppRequest {
 
     public void setData(RequestData data) {
         this.data = data;
+    }
+
+    public String getJobId() {
+        return jobId;
+    }
+
+    public void setJobId(String jobId) {
+        this.jobId = jobId;
     }
 
     @JsonIgnore
@@ -66,12 +88,33 @@ public class LocalAppRequest {
         @JsonProperty("n")
         private int n; // files per worker ratio
 
+        @JsonProperty("replyQueueUrl")
+        private String replyQueueUrl;
+
+        @JsonProperty("jobId")
+        private String jobId;
+
         public RequestData() {
         }
 
         public RequestData(String inputFileS3Key, int n) {
+            this(inputFileS3Key, n, null, null);
+        }
+
+        public RequestData(String inputFileS3Key, int n, String replyQueueUrl) {
+            this(inputFileS3Key, n, replyQueueUrl, null);
+        }
+
+        @JsonCreator
+        public RequestData(
+                @JsonProperty("inputFileS3Key") String inputFileS3Key,
+                @JsonProperty("n") int n,
+                @JsonProperty("replyQueueUrl") String replyQueueUrl,
+                @JsonProperty("jobId") String jobId) {
             this.inputFileS3Key = inputFileS3Key;
             this.n = n;
+            this.replyQueueUrl = replyQueueUrl;
+            this.jobId = jobId;
         }
 
         public String getInputFileS3Key() {
@@ -88,6 +131,22 @@ public class LocalAppRequest {
 
         public void setN(int n) {
             this.n = n;
+        }
+
+        public String getReplyQueueUrl() {
+            return replyQueueUrl;
+        }
+
+        public void setReplyQueueUrl(String replyQueueUrl) {
+            this.replyQueueUrl = replyQueueUrl;
+        }
+
+        public String getJobId() {
+            return jobId;
+        }
+
+        public void setJobId(String jobId) {
+            this.jobId = jobId;
         }
 
         @Override

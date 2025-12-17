@@ -1,6 +1,7 @@
 package com.distributed.systems.shared.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
 
 /**
  * Message sent from Manager to Worker
@@ -8,12 +9,16 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class WorkerTaskMessage {
 
     public static final String TYPE_URL_PARSE_REQUEST = "urlParseRequest";
+    public static final String TYPE_TERMINATE = "terminate";
 
     @JsonProperty("type")
     private String type;
 
     @JsonProperty("data")
     private TaskData data;
+
+    @JsonProperty("jobId")
+    private String jobId;
 
     public WorkerTaskMessage() {
     }
@@ -23,8 +28,18 @@ public class WorkerTaskMessage {
         this.data = data;
     }
 
-    public static WorkerTaskMessage create(String parsingMethod, String url) {
-        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(parsingMethod, url));
+    public WorkerTaskMessage(String type, TaskData data, String jobId) {
+        this.type = type;
+        this.data = data;
+        this.jobId = jobId;
+    }
+
+    public static WorkerTaskMessage createTask(String parsingMethod, String url, String jobId) {
+        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(parsingMethod, url, jobId), jobId);
+    }
+
+    public static WorkerTaskMessage createTerminate() {
+        return new WorkerTaskMessage(TYPE_TERMINATE, null, null);
     }
 
     public String getType() {
@@ -43,6 +58,14 @@ public class WorkerTaskMessage {
         this.data = data;
     }
 
+    public String getJobId() {
+        return jobId;
+    }
+
+    public void setJobId(String jobId) {
+        this.jobId = jobId;
+    }
+
     public static class TaskData {
         @JsonProperty("parsingMethod")
         private String parsingMethod; // POS, CONSTITUENCY, or DEPENDENCY
@@ -50,12 +73,20 @@ public class WorkerTaskMessage {
         @JsonProperty("url")
         private String url;
 
+        @JsonProperty("jobId")
+        private String jobId;
+
         public TaskData() {
         }
 
-        public TaskData(String parsingMethod, String url) {
+        @JsonCreator
+        public TaskData(
+                @JsonProperty("parsingMethod") String parsingMethod,
+                @JsonProperty("url") String url,
+                @JsonProperty("jobId") String jobId) {
             this.parsingMethod = parsingMethod;
             this.url = url;
+            this.jobId = jobId;
         }
 
         public String getParsingMethod() {
@@ -72,6 +103,14 @@ public class WorkerTaskMessage {
 
         public void setUrl(String url) {
             this.url = url;
+        }
+
+        public String getJobId() {
+            return jobId;
+        }
+
+        public void setJobId(String jobId) {
+            this.jobId = jobId;
         }
 
         @Override

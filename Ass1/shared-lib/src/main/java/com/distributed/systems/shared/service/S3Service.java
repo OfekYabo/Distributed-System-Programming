@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -144,6 +146,29 @@ public class S3Service implements AutoCloseable {
 
             s3Client.createBucket(createRequest);
             logger.info("Bucket created: {}", bucketName);
+        }
+    }
+
+    /**
+     * Lists all objects in the bucket that start with the given prefix.
+     * Returns a list of object keys.
+     */
+    public List<String> listObjects(String prefix) {
+        try {
+            ListObjectsV2Request request = ListObjectsV2Request.builder()
+                    .bucket(bucketName)
+                    .prefix(prefix)
+                    .build();
+
+            ListObjectsV2Response response = s3Client.listObjectsV2(request);
+
+            return response.contents().stream()
+                    .map(S3Object::key)
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            logger.error("Failed to list objects with prefix: {}", prefix, e);
+            return Collections.emptyList();
         }
     }
 

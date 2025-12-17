@@ -85,7 +85,8 @@ public class LocalApp {
         this.awsRegion = config.getString(AWS_REGION_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
-        this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
+        // Task 1: Unique Queue - Override config value with unique name
+        this.localAppOutputQueue = "local-app-output-" + UUID.randomUUID().toString();
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
         this.s3InputPrefix = config.getOptional(S3_INPUT_PREFIX_KEY, "input");
@@ -100,6 +101,8 @@ public class LocalApp {
         this.n = n;
         this.terminate = terminate;
         this.jobId = UUID.randomUUID().toString().substring(0, 8);
+
+        // Output queue already assigned uniquely above
 
         // Initialize shared services
         Ec2Client ec2Client = Ec2Client.builder().region(Region.of(awsRegion)).build();
@@ -117,6 +120,7 @@ public class LocalApp {
         logger.info("  N (files per worker): {}", n);
         logger.info("  Terminate: {}", terminate);
         logger.info("  Job ID: {}", jobId);
+        logger.info("  Reply Queue: {}", localAppOutputQueue);
     }
 
     /**
@@ -286,7 +290,7 @@ public class LocalApp {
     }
 
     private void sendTaskRequest() {
-        LocalAppRequest request = LocalAppRequest.newTask(inputS3Key, n);
+        LocalAppRequest request = LocalAppRequest.newTask(inputS3Key, n, localAppOutputQueue, jobId);
         sqsService.sendMessage(localAppInputQueue, request);
         logger.info("Task request sent: {}", request);
     }
@@ -363,6 +367,9 @@ public class LocalApp {
             logger.error("Error closing S3", e);
         }
         try {
+            // Task 1: Cleanup unique queue
+            logger.info("Deleting reply queue: {}", localAppOutputQueue);
+            sqsService.deleteQueue(localAppOutputQueue);
             sqsService.close();
         } catch (Exception e) {
             logger.error("Error closing SQS", e);

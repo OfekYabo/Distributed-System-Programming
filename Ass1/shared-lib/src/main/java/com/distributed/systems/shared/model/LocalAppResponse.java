@@ -43,6 +43,10 @@ public class LocalAppResponse {
         return TYPE_TASK_COMPLETE.equals(type);
     }
 
+    public static LocalAppResponse taskComplete(String inputFileS3Key, String summaryS3Key) {
+        return new LocalAppResponse(TYPE_TASK_COMPLETE, new ResponseData(inputFileS3Key, summaryS3Key));
+    }
+
     public static class ResponseData {
         @JsonProperty("inputFileS3Key")
         private String inputFileS3Key;

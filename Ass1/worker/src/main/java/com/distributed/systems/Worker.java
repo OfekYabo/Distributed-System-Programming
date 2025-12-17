@@ -3,14 +3,24 @@ package com.distributed.systems;
 import com.distributed.systems.shared.AppConfig;
 import com.distributed.systems.shared.model.WorkerTaskMessage;
 import com.distributed.systems.shared.model.WorkerTaskResult;
+import com.distributed.systems.shared.model.TaskResultMetadata;
+import com.distributed.systems.shared.service.Ec2Service;
 import com.distributed.systems.shared.service.S3Service;
 import com.distributed.systems.shared.service.SqsService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.Message;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -26,6 +36,7 @@ public class Worker {
 
     // Config keys
     private static final String INPUT_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
     private static final String OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
     private static final String AWS_REGION_KEY = "AWS_REGION";
@@ -37,6 +48,7 @@ public class Worker {
 
     private final SqsService sqsService;
     private final S3Service s3Service;
+    private final Ec2Service ec2Service;
     private final TaskProcessor taskProcessor;
     private final AtomicBoolean running;
 
@@ -44,6 +56,7 @@ public class Worker {
     private final String awsRegion;
     private final String s3BucketName;
     private final String inputQueue;
+    private final String controlQueue;
     private final String outputQueue;
     private final int maxMessages;
     private final int waitTimeSeconds;
@@ -57,6 +70,7 @@ public class Worker {
         this.awsRegion = config.getString(AWS_REGION_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.inputQueue = config.getString(INPUT_QUEUE_KEY);
+        this.controlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
         this.outputQueue = config.getString(OUTPUT_QUEUE_KEY);
         this.maxMessages = config.getIntOptional(MAX_MESSAGES_KEY, 1);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
@@ -66,9 +80,11 @@ public class Worker {
         // Initialize AWS clients
         SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
         S3Client s3Client = S3Client.builder().region(Region.of(awsRegion)).build();
+        Ec2Client ec2Client = Ec2Client.builder().region(Region.of(awsRegion)).build();
 
         this.sqsService = new SqsService(sqsClient);
         this.s3Service = new S3Service(s3Client, s3BucketName);
+        this.ec2Service = new Ec2Service(ec2Client);
 
         // Initialize task processor
         this.taskProcessor = new TaskProcessor(config, s3Service);
@@ -90,7 +106,21 @@ public class Worker {
         // Main processing loop
         while (running.get()) {
             try {
-                // Poll for messages
+                // Priority 1: Check Control Queue for Termination Signals
+                // Use short wait time for control messages
+                List<Message> controlMessages = sqsService.receiveMessages(controlQueue, 1, 1, visibilityTimeout);
+
+                if (!controlMessages.isEmpty()) {
+                    for (Message msg : controlMessages) {
+                        handleControlMessage(msg);
+                    }
+                    // Loop back to check control queue again or proceed to input queue?
+                    // Ideally we check control first. If handled (terminated), we die.
+                    // If not terminated (unknown msg), we continue.
+                    continue;
+                }
+
+                // Priority 2: Poll for regular tasks
                 List<Message> messages = sqsService.receiveMessages(inputQueue, maxMessages, waitTimeSeconds,
                         visibilityTimeout);
 
@@ -132,6 +162,10 @@ public class Worker {
     private void processMessage(Message message) {
         logger.info("Processing message: {}", message.messageId());
 
+        String url = "unknown";
+        String parsingMethod = "unknown";
+        String jobId = "unknown";
+
         try {
             // Parse the message
             WorkerTaskMessage taskMessage = sqsService.parseMessage(message.body(), WorkerTaskMessage.class);
@@ -144,12 +178,18 @@ public class Worker {
                 return;
             }
 
-            // Validate parsing method
             WorkerTaskMessage.TaskData taskData = taskMessage.getData();
-            if (!TaskProcessor.isValidParsingMethod(taskData.getParsingMethod())) {
-                String error = "Invalid parsing method: " + taskData.getParsingMethod();
+            if (taskData != null) {
+                url = taskData.getUrl();
+                parsingMethod = taskData.getParsingMethod();
+                jobId = taskData.getJobId();
+            }
+
+            // Validate parsing method
+            if (!TaskProcessor.isValidParsingMethod(parsingMethod)) {
+                String error = "Invalid parsing method: " + parsingMethod;
                 logger.error(error);
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), error);
+                sendErrorResponse(url, parsingMethod, error, jobId);
                 sqsService.deleteMessage(inputQueue, message);
                 return;
             }
@@ -160,13 +200,15 @@ public class Worker {
 
             Future<String> future = null;
             try {
-                future = taskExecutor.submit(() -> taskProcessor.processTask(taskData, deadline));
+                // Need effectively final for lambda? taskData should be fine or use locals
+                WorkerTaskMessage.TaskData finalTaskData = taskData;
+                future = taskExecutor.submit(() -> taskProcessor.processTask(finalTaskData, deadline));
 
                 // Wait for slightly less than visibility timeout to handle it before SQS does
                 String s3Url = future.get(timeoutSeconds, TimeUnit.SECONDS);
 
                 // Send success response
-                sendSuccessResponse(taskData.getUrl(), s3Url, taskData.getParsingMethod());
+                sendSuccessResponse(url, s3Url, parsingMethod, jobId);
 
                 // Delete message from queue (only after successful processing)
                 sqsService.deleteMessage(inputQueue, message);
@@ -182,20 +224,47 @@ public class Worker {
                 taskExecutor = Executors.newSingleThreadExecutor();
                 logger.warn("ExecutorService restarted to clear stuck thread.");
 
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), "Task Timed Out");
+                sendErrorResponse(url, parsingMethod, "Task Timed Out", jobId);
                 sqsService.deleteMessage(inputQueue, message); // Delete so we don't retry forever
             } catch (ExecutionException e) {
                 logger.error("Failed to process task", e.getCause());
                 String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-                sendErrorResponse(taskData.getUrl(), taskData.getParsingMethod(), errorMsg);
+
+                // Upload Error Metadata
+                try {
+                    String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+                    TaskResultMetadata metadata = new TaskResultMetadata(
+                            url, parsingMethod, null, false, errorMsg);
+                    String metadataJson = new ObjectMapper().writeValueAsString(metadata);
+                    s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
+                } catch (Exception ex) {
+                    logger.error("Failed to upload error metadata for execution exception", ex);
+                }
+
+                sendErrorResponse(url, parsingMethod, errorMsg, jobId);
                 sqsService.deleteMessage(inputQueue, message);
             } catch (InterruptedException e) {
                 logger.error("Worker interrupted while waiting for task", e);
                 Thread.currentThread().interrupt();
+
+                // Upload Error Metadata
+                try {
+                    String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+                    TaskResultMetadata metadata = new TaskResultMetadata(
+                            url, parsingMethod, null, false, "Worker Interrupted");
+                    String metadataJson = new ObjectMapper().writeValueAsString(metadata);
+                    s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
+                } catch (Exception ex) {
+                    logger.error("Failed to upload error metadata for interruption", ex);
+                }
+
+                sendErrorResponse(url, parsingMethod, "Worker Interrupted", jobId);
+                sqsService.deleteMessage(inputQueue, message);
             }
 
         } catch (Exception e) {
             logger.error("Failed to parse or handle message", e);
+            sqsService.deleteMessage(inputQueue, message);
         }
     }
 
@@ -203,7 +272,20 @@ public class Worker {
      * Sends a success response message
      */
     private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod) {
-        WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod);
+        // This method is now deprecated or needs to be updated to include jobId
+        // For now, keeping it for compatibility if other parts of the code still call
+        // it.
+        // The new logic directly sends the message with jobId.
+        logger.warn("Deprecated sendSuccessResponse called without jobId.");
+        WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod, null);
+        sqsService.sendMessage(outputQueue, result);
+    }
+
+    /**
+     * Sends a success response message with jobId
+     */
+    private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod, String jobId) {
+        WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod, jobId);
         sqsService.sendMessage(outputQueue, result);
     }
 
@@ -211,7 +293,20 @@ public class Worker {
      * Sends an error response message
      */
     private void sendErrorResponse(String fileUrl, String parsingMethod, String error) {
-        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error);
+        // This method is now deprecated or needs to be updated to include jobId
+        // For now, keeping it for compatibility if other parts of the code still call
+        // it.
+        // The new logic directly sends the message with jobId.
+        logger.warn("Deprecated sendErrorResponse called without jobId.");
+        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error, null);
+        sqsService.sendMessage(outputQueue, result);
+    }
+
+    /**
+     * Sends an error response message with jobId
+     */
+    private void sendErrorResponse(String fileUrl, String parsingMethod, String error, String jobId) {
+        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error, jobId);
         sqsService.sendMessage(outputQueue, result);
     }
 
@@ -248,6 +343,61 @@ public class Worker {
         } catch (Exception e) {
             logger.error("Error during cleanup", e);
         }
+    }
+
+    private void handleControlMessage(Message message) {
+        try {
+            WorkerTaskMessage taskMessage = sqsService.parseMessage(message.body(), WorkerTaskMessage.class);
+            if (WorkerTaskMessage.TYPE_TERMINATE.equals(taskMessage.getType())) {
+                logger.info("Received TERMINATE signal. Initiating self-termination...");
+                sqsService.deleteMessage(controlQueue, message); // Delete before dying
+                terminateSelf();
+            } else {
+                logger.warn("Received unknown message on control queue: {}", taskMessage.getType());
+                sqsService.deleteMessage(controlQueue, message);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to process control message", e);
+        }
+    }
+
+    private void terminateSelf() {
+        try {
+            String instanceId = retrieveInstanceId();
+            logger.info("Self-terminating instance: {}", instanceId);
+            if (instanceId != null) {
+                ec2Service.terminateInstance(instanceId);
+            } else {
+                logger.error("Could not retrieve instance ID. Exiting process only.");
+            }
+        } catch (Exception e) {
+            logger.error("Error during self-termination", e);
+        } finally {
+            cleanup();
+            System.exit(0);
+        }
+    }
+
+    private String retrieveInstanceId() {
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .build();
+
+            // Try IMDSv1 first (simpler)
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://169.254.169.254/latest/meta-data/instance-id"))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return response.body();
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to retrieve instance ID via IMDS: {}", e.getMessage());
+        }
+        return null;
     }
 
     /**

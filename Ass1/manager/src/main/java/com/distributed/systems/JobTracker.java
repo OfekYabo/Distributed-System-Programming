@@ -3,7 +3,6 @@ package com.distributed.systems;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -19,36 +18,31 @@ public class JobTracker {
     // Map from inputFileS3Key to JobInfo
     private final ConcurrentHashMap<String, JobInfo> jobs;
 
-    // Map from (url + parsingMethod) to inputFileS3Key for reverse lookup
-    private final ConcurrentHashMap<String, String> taskToJobMapping;
+    // Global counter for needed workers
+    private final AtomicInteger globalNeededWorkers;
 
     public JobTracker() {
         this.jobs = new ConcurrentHashMap<>();
-        this.taskToJobMapping = new ConcurrentHashMap<>();
-    }
-
-    /**
-     * Creates a task key from url and parsing method
-     */
-    private String createTaskKey(String url, String parsingMethod) {
-        return parsingMethod + "|" + url;
+        this.globalNeededWorkers = new AtomicInteger(0);
     }
 
     /**
      * Registers a new job
      */
-    public void registerJob(String inputFileS3Key, List<TaskInfo> tasks, int n) {
-        JobInfo jobInfo = new JobInfo(inputFileS3Key, tasks.size(), n);
+    /**
+     * Registers a new job
+     */
+    public void registerJob(String inputFileS3Key, int totalTasks, int n, String replyQueueUrl, String jobId) {
+        JobInfo jobInfo = new JobInfo(inputFileS3Key, totalTasks, n, replyQueueUrl, jobId);
         jobs.put(inputFileS3Key, jobInfo);
 
-        // Register all tasks for reverse lookup
-        for (TaskInfo task : tasks) {
-            String taskKey = createTaskKey(task.url, task.parsingMethod);
-            taskToJobMapping.put(taskKey, inputFileS3Key);
-            jobInfo.addPendingTask(task);
-        }
+        // Calculate initial needed workers for this job
+        int initialNeeded = (int) Math.ceil((double) totalTasks / n);
+        jobInfo.setPrevNeededWorkers(initialNeeded);
+        globalNeededWorkers.addAndGet(initialNeeded);
 
-        logger.info("Registered job {} with {} tasks (n={})", inputFileS3Key, tasks.size(), n);
+        logger.info("Registered job {} (ID: {}) with {} tasks (n={}, replyQueue={}). Needed workers: {}",
+                inputFileS3Key, jobId, totalTasks, n, replyQueueUrl, initialNeeded);
     }
 
     /**
@@ -56,28 +50,20 @@ public class JobTracker {
      * 
      * @return The inputFileS3Key if job is complete, null otherwise
      */
-    public String recordSuccess(String url, String parsingMethod, String outputS3Url) {
-        String taskKey = createTaskKey(url, parsingMethod);
-        String inputFileS3Key = taskToJobMapping.get(taskKey);
-
-        if (inputFileS3Key == null) {
-            logger.warn("Received result for unknown task: {} / {}", url, parsingMethod);
+    public String recordSuccess(String inputFileS3Key) {
+        JobInfo job = jobs.get(inputFileS3Key);
+        if (job == null) {
+            logger.warn("Job not found for inputFileS3Key: {}", inputFileS3Key);
             return null;
         }
 
-        JobInfo jobInfo = jobs.get(inputFileS3Key);
-        if (jobInfo == null) {
-            logger.warn("Job not found for task: {}", inputFileS3Key);
-            return null;
-        }
+        job.incrementCompleted();
+        updateWorkerNeed(job); // Scaling recalculation
 
-        TaskResult result = new TaskResult(url, parsingMethod, outputS3Url, null, true);
-        boolean isComplete = jobInfo.recordResult(result);
+        logger.debug("Recorded success for a task in job {}", inputFileS3Key);
 
-        logger.debug("Recorded success for task {} / {} in job {}", url, parsingMethod, inputFileS3Key);
-
-        if (isComplete) {
-            logger.info("Job {} is complete ({} tasks)", inputFileS3Key, jobInfo.getTotalTasks());
+        if (job.isComplete()) {
+            logger.info("Job {} is complete ({} tasks)", inputFileS3Key, job.getTotalTasks());
             return inputFileS3Key;
         }
 
@@ -85,36 +71,40 @@ public class JobTracker {
     }
 
     /**
-     * Records a failed task
-     * 
-     * @return The inputFileS3Key if job is complete, null otherwise
+     * Records a failed task result
      */
-    public String recordError(String url, String parsingMethod, String error) {
-        String taskKey = createTaskKey(url, parsingMethod);
-        String inputFileS3Key = taskToJobMapping.get(taskKey);
-
-        if (inputFileS3Key == null) {
-            logger.warn("Received error for unknown task: {} / {}", url, parsingMethod);
+    public String recordError(String inputFileS3Key) {
+        JobInfo job = jobs.get(inputFileS3Key);
+        if (job == null) {
+            logger.warn("Job not found for inputFileS3Key: {}", inputFileS3Key);
             return null;
         }
 
-        JobInfo jobInfo = jobs.get(inputFileS3Key);
-        if (jobInfo == null) {
-            logger.warn("Job not found for task: {}", inputFileS3Key);
-            return null;
-        }
+        job.incrementCompleted(); // Count as completed even if failed (handled)
+        updateWorkerNeed(job);
 
-        TaskResult result = new TaskResult(url, parsingMethod, null, error, false);
-        boolean isComplete = jobInfo.recordResult(result);
+        logger.debug("Recorded error for a task in job {}", inputFileS3Key);
 
-        logger.debug("Recorded error for task {} / {} in job {}: {}", url, parsingMethod, inputFileS3Key, error);
-
-        if (isComplete) {
-            logger.info("Job {} is complete ({} tasks)", inputFileS3Key, jobInfo.getTotalTasks());
+        if (job.isComplete()) {
+            logger.info("Job {} is complete ({} tasks)", inputFileS3Key, job.getTotalTasks());
             return inputFileS3Key;
         }
 
         return null;
+    }
+
+    private void updateWorkerNeed(JobInfo jobInfo) {
+        int done = jobInfo.getCompletedTasks();
+        int remaining = jobInfo.getTotalTasks() - done;
+        int newNeeded = (int) Math.ceil((double) remaining / jobInfo.getN());
+        int delta = newNeeded - jobInfo.getPrevNeededWorkers();
+
+        if (delta != 0) {
+            globalNeededWorkers.addAndGet(delta);
+            jobInfo.setPrevNeededWorkers(newNeeded);
+            logger.debug("Job {} worker need changed by {}. New global needed workers: {}",
+                    jobInfo.getInputFileS3Key(), delta, globalNeededWorkers.get());
+        }
     }
 
     /**
@@ -124,16 +114,26 @@ public class JobTracker {
         return jobs.get(inputFileS3Key);
     }
 
+    public String findInputFileKeyByJobId(String jobId) {
+        for (JobInfo job : jobs.values()) {
+            if (job.getJobId().equals(jobId)) {
+                return job.getInputFileS3Key();
+            }
+        }
+        return null;
+    }
+
     /**
      * Removes a job after processing is complete
      */
     public void removeJob(String inputFileS3Key) {
         JobInfo jobInfo = jobs.remove(inputFileS3Key);
         if (jobInfo != null) {
-            // Clean up task mappings
-            for (TaskResult result : jobInfo.getResults()) {
-                String taskKey = createTaskKey(result.url, result.parsingMethod);
-                taskToJobMapping.remove(taskKey);
+            // Adjust global needed workers if job was removed before all tasks were
+            // completed
+            int currentNeeded = jobInfo.getPrevNeededWorkers();
+            if (currentNeeded > 0) {
+                globalNeededWorkers.addAndGet(-currentNeeded);
             }
             logger.info("Removed job {}", inputFileS3Key);
         }
@@ -163,6 +163,13 @@ public class JobTracker {
     }
 
     /**
+     * Gets the current number of globally needed workers
+     */
+    public int getGlobalNeededWorkers() {
+        return globalNeededWorkers.get();
+    }
+
+    /**
      * Gets the 'n' value (files per worker) - returns max n across all jobs
      */
     public int getMaxN() {
@@ -179,34 +186,40 @@ public class JobTracker {
         private final String inputFileS3Key;
         private final int totalTasks;
         private final int n;
-        private final AtomicInteger completedTasks;
-        private final List<TaskResult> results;
-        private final Set<String> pendingTasks;
+        private final String replyQueueUrl;
+        private final String jobId;
+        private final AtomicInteger completedTasks = new AtomicInteger(0);
+        // Stateless: No list of results stored here anymore
 
-        public JobInfo(String inputFileS3Key, int totalTasks, int n) {
+        // Scaling tracking
+        private int prevNeededWorkers = 0;
+
+        public JobInfo(String inputFileS3Key, int totalTasks, int n, String replyQueueUrl, String jobId) {
             this.inputFileS3Key = inputFileS3Key;
             this.totalTasks = totalTasks;
             this.n = n;
-            this.completedTasks = new AtomicInteger(0);
-            this.results = Collections.synchronizedList(new ArrayList<>());
-            this.pendingTasks = Collections.synchronizedSet(new HashSet<>());
+            this.replyQueueUrl = replyQueueUrl;
+            this.jobId = jobId;
         }
 
-        void addPendingTask(TaskInfo task) {
-            pendingTasks.add(task.parsingMethod + "|" + task.url);
+        public void setPrevNeededWorkers(int workers) {
+            this.prevNeededWorkers = workers;
         }
 
-        boolean recordResult(TaskResult result) {
-            String taskKey = result.parsingMethod + "|" + result.url;
-            if (pendingTasks.remove(taskKey)) {
-                results.add(result);
-                return completedTasks.incrementAndGet() >= totalTasks;
-            }
-            return false;
+        public int getPrevNeededWorkers() {
+            return prevNeededWorkers;
         }
 
         public String getInputFileS3Key() {
             return inputFileS3Key;
+        }
+
+        public String getReplyQueueUrl() {
+            return replyQueueUrl;
+        }
+
+        public String getJobId() {
+            return jobId;
         }
 
         public int getTotalTasks() {
@@ -221,52 +234,12 @@ public class JobTracker {
             return completedTasks.get();
         }
 
-        public List<TaskResult> getResults() {
-            return new ArrayList<>(results);
+        public void incrementCompleted() {
+            completedTasks.incrementAndGet();
         }
 
         public boolean isComplete() {
             return completedTasks.get() >= totalTasks;
-        }
-    }
-
-    /**
-     * Information about a task to be processed
-     */
-    public static class TaskInfo {
-        public final String url;
-        public final String parsingMethod;
-
-        public TaskInfo(String url, String parsingMethod) {
-            this.url = url;
-            this.parsingMethod = parsingMethod;
-        }
-    }
-
-    /**
-     * Result of a task (success or error)
-     */
-    public static class TaskResult {
-        public final String url;
-        public final String parsingMethod;
-        public final String outputS3Url;
-        public final String error;
-        public final boolean success;
-
-        public TaskResult(String url, String parsingMethod, String outputS3Url, String error, boolean success) {
-            this.url = url;
-            this.parsingMethod = parsingMethod;
-            this.outputS3Url = outputS3Url;
-            this.error = error;
-            this.success = success;
-        }
-
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public String getOutputUrl() {
-            return outputS3Url;
         }
     }
 }

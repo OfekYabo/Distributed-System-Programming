@@ -25,7 +25,10 @@ public class WorkerScaler implements Runnable {
 
     // Config Keys
     private static final String SCALING_INTERVAL_KEY = "SCALING_INTERVAL_SECONDS";
+    private static final String SCALE_UP_INTERVAL_KEY = "WORKER_SCALE_UP_INTERVAL_SECONDS";
+    private static final String SCALE_DOWN_INTERVAL_KEY = "WORKER_SCALE_DOWN_INTERVAL_SECONDS";
     private static final String WORKER_QUEUE_KEY = "WORKER_INPUT_QUEUE";
+    private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
     private static final String MAX_INSTANCES_KEY = "WORKER_MAX_INSTANCES";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
 
@@ -44,7 +47,10 @@ public class WorkerScaler implements Runnable {
 
     // Config Values
     private final int scalingIntervalSeconds;
+    private final int scaleUpIntervalSeconds;
+    private final int scaleDownIntervalSeconds;
     private final String workerQueue;
+    private final String workerControlQueue;
     private final int maxWorkerInstances;
     private final String s3BucketName;
     private final String amiId;
@@ -67,7 +73,10 @@ public class WorkerScaler implements Runnable {
 
         // Load Configuration
         this.scalingIntervalSeconds = config.getIntOptional(SCALING_INTERVAL_KEY, 10);
+        this.scaleUpIntervalSeconds = config.getIntOptional(SCALE_UP_INTERVAL_KEY, 10);
+        this.scaleDownIntervalSeconds = config.getIntOptional(SCALE_DOWN_INTERVAL_KEY, 30);
         this.workerQueue = config.getString(WORKER_QUEUE_KEY);
+        this.workerControlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
         this.maxWorkerInstances = config.getIntOptional(MAX_INSTANCES_KEY, 10);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.amiId = config.getString(AMI_ID);
@@ -106,45 +115,62 @@ public class WorkerScaler implements Runnable {
     /**
      * Checks the current state and scales workers if needed
      */
+    private long lastScaleUpTime = 0;
+    private long lastScaleDownTime = 0;
+
+    /**
+     * Checks the current state and scales workers if needed
+     */
     private void checkAndScale() {
         try {
             // Get current state
-            int pendingMessages = sqsService.getApproximateMessageCount(workerQueue);
+            int globalNeeded = jobTracker.getGlobalNeededWorkers();
             int currentWorkers = getRunningWorkerCount();
-            int n = jobTracker.getMaxN();
 
-            if (n <= 0) {
-                n = 1; // Safety fallback
-            }
+            // Calculate target
+            int targetWorkers = Math.min(globalNeeded, maxWorkerInstances);
+            if (targetWorkers < 0)
+                targetWorkers = 0;
 
-            // Calculate required workers: ceil(pendingMessages / n)
-            int requiredWorkers = (int) Math.ceil((double) pendingMessages / n);
+            logger.debug("Scaling check: needed={}, target={}, current={}",
+                    globalNeeded, targetWorkers, currentWorkers);
 
-            // Cap at max instances
-            requiredWorkers = Math.min(requiredWorkers, maxWorkerInstances);
+            long now = System.currentTimeMillis();
 
-            logger.debug("Scaling check: pending={}, current={}, required={}, n={}",
-                    pendingMessages, currentWorkers, requiredWorkers, n);
-
-            // Scale up if needed
-            if (requiredWorkers > currentWorkers) {
-                int toCreate = Math.min(
-                        requiredWorkers - currentWorkers,
-                        maxWorkerInstances - currentWorkers);
-
-                if (toCreate > 0) {
-                    logger.info("Scaling up: creating {} worker(s) (current={}, required={})",
-                            toCreate, currentWorkers, requiredWorkers);
+            // Scale UP
+            if (currentWorkers < targetWorkers) {
+                if (now - lastScaleUpTime >= scaleUpIntervalSeconds * 1000L) {
+                    int toCreate = targetWorkers - currentWorkers;
+                    logger.info("Scaling UP: creating {} worker(s) (current={}, target={})",
+                            toCreate, currentWorkers, targetWorkers);
                     launchWorkers(toCreate);
+                    lastScaleUpTime = now;
                 }
             }
-
-            // Note: We don't scale down automatically during normal operation
-            // Workers will naturally finish their tasks
+            // Scale DOWN
+            else if (currentWorkers > targetWorkers) {
+                if (now - lastScaleDownTime >= scaleDownIntervalSeconds * 1000L) {
+                    int excess = currentWorkers - targetWorkers;
+                    logger.info("Scaling DOWN: terminating {} worker(s) (current={}, target={})",
+                            excess, currentWorkers, targetWorkers);
+                    terminateWorkersGracefully(excess);
+                    lastScaleDownTime = now;
+                }
+            }
 
         } catch (Exception e) {
             logger.error("Error during scaling check: {}", e.getMessage());
         }
+    }
+
+    private void terminateWorkersGracefully(int count) {
+        // Send 'count' Poison Pill messages to the Control Queue
+        for (int i = 0; i < count; i++) {
+            com.distributed.systems.shared.model.WorkerTaskMessage terminateMsg = com.distributed.systems.shared.model.WorkerTaskMessage
+                    .createTerminate();
+            sqsService.sendMessage(workerControlQueue, terminateMsg);
+        }
+        logger.info("Sent {} termination messages to {}", count, workerControlQueue);
     }
 
     private void launchWorkers(int count) {
