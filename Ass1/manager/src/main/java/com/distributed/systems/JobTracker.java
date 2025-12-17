@@ -45,7 +45,7 @@ public class JobTracker {
         for (TaskInfo task : tasks) {
             String taskKey = createTaskKey(task.url, task.parsingMethod);
             taskToJobMapping.put(taskKey, inputFileS3Key);
-            jobInfo.addPendingTask(task);
+            jobInfo.addPendingTask(taskKey);
         }
 
         logger.info("Registered job {} with {} tasks (n={})", inputFileS3Key, tasks.size(), n);
@@ -85,7 +85,7 @@ public class JobTracker {
     }
 
     /**
-     * Records a failed task
+     * Records a failed task (after worker exhausted retries)
      * 
      * @return The inputFileS3Key if job is complete, null otherwise
      */
@@ -192,8 +192,8 @@ public class JobTracker {
             this.pendingTasks = Collections.synchronizedSet(new HashSet<>());
         }
 
-        void addPendingTask(TaskInfo task) {
-            pendingTasks.add(task.parsingMethod + "|" + task.url);
+        void addPendingTask(String taskKey) {
+            pendingTasks.add(taskKey);
         }
 
         boolean recordResult(TaskResult result) {
