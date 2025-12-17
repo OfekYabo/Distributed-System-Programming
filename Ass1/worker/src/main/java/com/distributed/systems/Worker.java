@@ -230,33 +230,11 @@ public class Worker {
                 logger.error("Failed to process task", e.getCause());
                 String errorMsg = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
 
-                // Upload Error Metadata
-                try {
-                    String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
-                    TaskResultMetadata metadata = new TaskResultMetadata(
-                            url, parsingMethod, null, false, errorMsg);
-                    String metadataJson = new ObjectMapper().writeValueAsString(metadata);
-                    s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
-                } catch (Exception ex) {
-                    logger.error("Failed to upload error metadata for execution exception", ex);
-                }
-
                 sendErrorResponse(url, parsingMethod, errorMsg, jobId);
                 sqsService.deleteMessage(inputQueue, message);
             } catch (InterruptedException e) {
                 logger.error("Worker interrupted while waiting for task", e);
                 Thread.currentThread().interrupt();
-
-                // Upload Error Metadata
-                try {
-                    String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
-                    TaskResultMetadata metadata = new TaskResultMetadata(
-                            url, parsingMethod, null, false, "Worker Interrupted");
-                    String metadataJson = new ObjectMapper().writeValueAsString(metadata);
-                    s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
-                } catch (Exception ex) {
-                    logger.error("Failed to upload error metadata for interruption", ex);
-                }
 
                 sendErrorResponse(url, parsingMethod, "Worker Interrupted", jobId);
                 sqsService.deleteMessage(inputQueue, message);
@@ -271,42 +249,35 @@ public class Worker {
     /**
      * Sends a success response message
      */
-    private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod) {
-        // This method is now deprecated or needs to be updated to include jobId
-        // For now, keeping it for compatibility if other parts of the code still call
-        // it.
-        // The new logic directly sends the message with jobId.
-        logger.warn("Deprecated sendSuccessResponse called without jobId.");
-        WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod, null);
-        sqsService.sendMessage(outputQueue, result);
-    }
-
-    /**
-     * Sends a success response message with jobId
-     */
     private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod, String jobId) {
-        WorkerTaskResult result = WorkerTaskResult.createSuccess(fileUrl, outputUrl, parsingMethod, jobId);
+        // Always upload metadata for success
+        try {
+            String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+            TaskResultMetadata metadata = new TaskResultMetadata(
+                    fileUrl, parsingMethod, outputUrl, true, null);
+            String metadataJson = new ObjectMapper().writeValueAsString(metadata);
+            s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
+        } catch (Exception ex) {
+            logger.error("Failed to upload success metadata", ex);
+        }
+
+        WorkerTaskResult result = WorkerTaskResult.createSuccess(jobId);
         sqsService.sendMessage(outputQueue, result);
     }
 
-    /**
-     * Sends an error response message
-     */
-    private void sendErrorResponse(String fileUrl, String parsingMethod, String error) {
-        // This method is now deprecated or needs to be updated to include jobId
-        // For now, keeping it for compatibility if other parts of the code still call
-        // it.
-        // The new logic directly sends the message with jobId.
-        logger.warn("Deprecated sendErrorResponse called without jobId.");
-        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error, null);
-        sqsService.sendMessage(outputQueue, result);
-    }
-
-    /**
-     * Sends an error response message with jobId
-     */
     private void sendErrorResponse(String fileUrl, String parsingMethod, String error, String jobId) {
-        WorkerTaskResult result = WorkerTaskResult.createError(fileUrl, parsingMethod, error, jobId);
+        // Always upload metadata for error
+        try {
+            String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+            TaskResultMetadata metadata = new TaskResultMetadata(
+                    fileUrl, parsingMethod, null, false, error);
+            String metadataJson = new ObjectMapper().writeValueAsString(metadata);
+            s3Service.uploadString(metadataS3Key, metadataJson, "application/json");
+        } catch (Exception ex) {
+            logger.error("Failed to upload error metadata", ex);
+        }
+
+        WorkerTaskResult result = WorkerTaskResult.createError(jobId);
         sqsService.sendMessage(outputQueue, result);
     }
 

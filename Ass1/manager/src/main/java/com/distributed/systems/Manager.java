@@ -64,7 +64,6 @@ public class Manager {
     private final S3Service s3Service;
     private final Ec2Service ec2Service;
     private final JobTracker jobTracker;
-    private final HtmlSummaryGenerator htmlGenerator;
 
     private final AtomicBoolean running;
     private final AtomicBoolean acceptingJobs;
@@ -108,15 +107,13 @@ public class Manager {
         // Initialize job tracker
         this.jobTracker = new JobTracker();
 
-        // Initialize HTML generator
-        this.htmlGenerator = new HtmlSummaryGenerator(s3Service);
-
         // Initialize threads
         this.localAppListener = new LocalAppListener(
                 config, sqsService, s3Service, jobTracker, running, acceptingJobs, terminateRequested);
 
-        this.workerResultsListener = new WorkerResultsListener(
-                config, sqsService, s3Service, jobTracker, htmlGenerator, running);
+        // HtmlSummaryGenerator is static now
+        Runnable resultsListener = new WorkerResultsListener(config, sqsService, s3Service,
+                jobTracker, running);
 
         this.workerScaler = new WorkerScaler(
                 config, sqsService, ec2Service, jobTracker, running, terminateRequested);

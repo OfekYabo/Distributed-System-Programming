@@ -17,9 +17,6 @@ public class WorkerTaskMessage {
     @JsonProperty("data")
     private TaskData data;
 
-    @JsonProperty("jobId")
-    private String jobId;
-
     public WorkerTaskMessage() {
     }
 
@@ -28,18 +25,12 @@ public class WorkerTaskMessage {
         this.data = data;
     }
 
-    public WorkerTaskMessage(String type, TaskData data, String jobId) {
-        this.type = type;
-        this.data = data;
-        this.jobId = jobId;
-    }
-
     public static WorkerTaskMessage createTask(String parsingMethod, String url, String jobId) {
-        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(parsingMethod, url, jobId), jobId);
+        return new WorkerTaskMessage(TYPE_URL_PARSE_REQUEST, new TaskData(parsingMethod, url, jobId));
     }
 
     public static WorkerTaskMessage createTerminate() {
-        return new WorkerTaskMessage(TYPE_TERMINATE, null, null);
+        return new WorkerTaskMessage(TYPE_TERMINATE, null);
     }
 
     public String getType() {
@@ -56,14 +47,6 @@ public class WorkerTaskMessage {
 
     public void setData(TaskData data) {
         this.data = data;
-    }
-
-    public String getJobId() {
-        return jobId;
-    }
-
-    public void setJobId(String jobId) {
-        this.jobId = jobId;
     }
 
     public static class TaskData {

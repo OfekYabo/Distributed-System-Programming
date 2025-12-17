@@ -23,15 +23,14 @@ public class WorkerTaskResult {
         this.data = data;
     }
 
-    public static WorkerTaskResult createSuccess(String fileUrl, String outputUrl, String parsingMethod, String jobId) {
+    public static WorkerTaskResult createSuccess(String jobId) {
         return new WorkerTaskResult(TYPE_URL_PARSE_RESPONSE,
-                new ResultData(fileUrl, outputUrl, parsingMethod, true, null, jobId));
+                new ResultData(true, jobId));
     }
 
-    public static WorkerTaskResult createError(String fileUrl, String parsingMethod, String errorMessage,
-            String jobId) {
+    public static WorkerTaskResult createError(String jobId) {
         return new WorkerTaskResult(TYPE_URL_PARSE_RESPONSE,
-                new ResultData(fileUrl, null, parsingMethod, false, errorMessage, jobId));
+                new ResultData(false, jobId));
     }
 
     public String getType() {
@@ -51,20 +50,8 @@ public class WorkerTaskResult {
     }
 
     public static class ResultData {
-        @JsonProperty("fileUrl")
-        private String fileUrl;
-
-        @JsonProperty("outputUrl")
-        private String outputUrl;
-
-        @JsonProperty("parsingMethod")
-        private String parsingMethod;
-
         @JsonProperty("success")
         private boolean success;
-
-        @JsonProperty("errorMessage")
-        private String errorMessage;
 
         @JsonProperty("jobId")
         private String jobId;
@@ -72,38 +59,9 @@ public class WorkerTaskResult {
         public ResultData() {
         }
 
-        public ResultData(String fileUrl, String outputUrl, String parsingMethod, boolean success,
-                String errorMessage, String jobId) {
-            this.fileUrl = fileUrl;
-            this.outputUrl = outputUrl;
-            this.parsingMethod = parsingMethod;
+        public ResultData(boolean success, String jobId) {
             this.success = success;
-            this.errorMessage = errorMessage;
             this.jobId = jobId;
-        }
-
-        public String getFileUrl() {
-            return fileUrl;
-        }
-
-        public void setFileUrl(String fileUrl) {
-            this.fileUrl = fileUrl;
-        }
-
-        public String getOutputUrl() {
-            return outputUrl;
-        }
-
-        public void setOutputUrl(String outputUrl) {
-            this.outputUrl = outputUrl;
-        }
-
-        public String getParsingMethod() {
-            return parsingMethod;
-        }
-
-        public void setParsingMethod(String parsingMethod) {
-            this.parsingMethod = parsingMethod;
         }
 
         public boolean isSuccess() {
@@ -112,14 +70,6 @@ public class WorkerTaskResult {
 
         public void setSuccess(boolean success) {
             this.success = success;
-        }
-
-        public String getErrorMessage() {
-            return errorMessage;
-        }
-
-        public void setErrorMessage(String errorMessage) {
-            this.errorMessage = errorMessage;
         }
 
         public String getJobId() {
@@ -133,11 +83,8 @@ public class WorkerTaskResult {
         @Override
         public String toString() {
             return "ResultData{" +
-                    "fileUrl='" + fileUrl + '\'' +
-                    ", outputUrl='" + outputUrl + '\'' +
-                    ", parsingMethod='" + parsingMethod + '\'' +
-                    ", success=" + success +
-                    ", errorMessage='" + errorMessage + '\'' +
+                    "success=" + success +
+                    ", jobId='" + jobId + '\'' +
                     '}';
         }
     }

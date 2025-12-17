@@ -148,8 +148,9 @@ public class LocalAppListener implements Runnable {
 
         String inputFileS3Key = data.getInputFileS3Key();
         int n = data.getN() > 0 ? data.getN() : 1;
-        String replyQueueUrl = request.getData().getReplyQueueUrl();
         String jobId = request.getData().getJobId();
+        // Derived from JobID
+        String replyQueueUrl = "local-app-output-" + jobId;
         logger.info("New task received. Input: {}, N: {}, ReplyQueue: {}, JobID: {}",
                 inputFileS3Key, n, replyQueueUrl, jobId);
 
@@ -182,8 +183,10 @@ public class LocalAppListener implements Runnable {
                 return;
             }
 
-            // Register the job with the tracker
-            jobTracker.registerJob(inputFileS3Key, taskMessages.size(), n, data.getReplyQueueUrl(), currentJobId);
+            int totalTasks = taskMessages.size();
+            // Register the job with the JobTracker
+            // Queue URL is derived from Job ID
+            jobTracker.registerJob(jobId, inputFileS3Key, totalTasks, n);
 
             // Send tasks to worker queue
             for (WorkerTaskMessage taskMsg : taskMessages) {

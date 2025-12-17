@@ -35,7 +35,6 @@ public class WorkerResultsListener implements Runnable {
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final JobTracker jobTracker;
-    private final HtmlSummaryGenerator htmlGenerator;
     private final AtomicBoolean running;
 
     // Config Values
@@ -50,12 +49,10 @@ public class WorkerResultsListener implements Runnable {
             SqsService sqsService,
             S3Service s3Service,
             JobTracker jobTracker,
-            HtmlSummaryGenerator htmlGenerator,
             AtomicBoolean running) {
         this.sqsService = sqsService;
         this.s3Service = s3Service;
         this.jobTracker = jobTracker;
-        this.htmlGenerator = htmlGenerator;
         this.running = running;
 
         // Load Configuration
@@ -97,24 +94,29 @@ public class WorkerResultsListener implements Runnable {
     /**
      * Processes a message from a worker
      */
+    /**
+     * Processes a message from a worker
+     */
     private void processMessage(Message message) {
         try {
             // Parse the unified result message
             WorkerTaskResult result = sqsService.parseMessage(message.body(), WorkerTaskResult.class);
             WorkerTaskResult.ResultData data = result.getData();
 
-            String completedJobKey;
-
-            // Legacy logging/tracking removed in favor of handleResult
-            if (data.isSuccess()) {
-                logger.info("Worker success: {} / {} -> {}",
-                        data.getFileUrl(), data.getParsingMethod(), data.getOutputUrl());
-            } else {
-                logger.warn("Worker error: {} / {} - {}",
-                        data.getFileUrl(), data.getParsingMethod(), data.getErrorMessage());
+            if (data == null) {
+                logger.warn("Received empty result data");
+                sqsService.deleteMessage(workerOutputQueue, message);
+                return;
             }
 
-            handleResult(result);
+            String jobId = data.getJobId();
+
+            // Record task completion in JobTracker
+            String completedJobId = jobTracker.recordTaskCompletion(jobId);
+
+            if (completedJobId != null) {
+                handleJobCompletion(completedJobId);
+            }
 
             // Delete the message after successful processing
             sqsService.deleteMessage(workerOutputQueue, message);
@@ -125,51 +127,21 @@ public class WorkerResultsListener implements Runnable {
         }
     }
 
-    private void handleResult(WorkerTaskResult result) {
-        WorkerTaskResult.ResultData data = result.getData();
-        if (data == null) {
-            logger.warn("Received empty result data");
-            return;
-        }
-
-        String jobId = data.getJobId();
-        // Since we are stateless, we need a way to find the inputFileS3Key from the
-        // JobId?
-        // JobInfo now has JobId. We can search active jobs by JobId.
-        String inputFileS3Key = jobTracker.findInputFileKeyByJobId(jobId);
-
-        if (inputFileS3Key == null) {
-            logger.warn("Received result for unknown Job ID: {}", jobId);
-            return;
-        }
-
-        String completedReq = null;
-
-        if (data.isSuccess()) {
-            completedReq = jobTracker.recordSuccess(inputFileS3Key);
-        } else {
-            completedReq = jobTracker.recordError(inputFileS3Key);
-        }
-
-        if (completedReq != null) {
-            handleJobCompletion(completedReq);
-        }
-    }
-
     /**
      * Handles the completion of a job
      */
-    private void handleJobCompletion(String inputFileS3Key) {
-        logger.info("Handling job completion: {}", inputFileS3Key);
+    private void handleJobCompletion(String jobId) {
+        logger.info("Handling job completion for Job ID: {}", jobId);
 
-        JobTracker.JobInfo jobInfo = jobTracker.getJob(inputFileS3Key);
+        JobTracker.JobInfo jobInfo = jobTracker.getJob(jobId);
         if (jobInfo == null) {
-            logger.error("Job info not found for completed job: {}", inputFileS3Key);
+            logger.error("Job info not found for completed job ID: {}", jobId);
             return;
         }
 
-        String replyQueueUrl = jobInfo.getReplyQueueUrl();
-        String jobId = jobInfo.getJobId();
+        // Reconstruct reply queue URL: local-app-output-<jobId>
+        String replyQueueUrl = "local-app-output-" + jobId;
+        String inputFileS3Key = jobInfo.getInputFileS3Key();
 
         try {
             // 1. Aggregate results from S3 Metadata
@@ -191,7 +163,6 @@ public class WorkerResultsListener implements Runnable {
                     logger.warn("Failed to process metadata for key {}: {}", key, e.getMessage());
                 }
             }
-            // Also clean up the metadata folder if empty? (S3 folders are virtual)
 
             // 2. Generate Summary
             logger.info("Generating HTML summary...");
@@ -202,12 +173,15 @@ public class WorkerResultsListener implements Runnable {
             s3Service.uploadString(summaryKey, summaryHtml, "text/html");
 
             // 4. Send Response
-            logger.info("Sending response to local app...");
+            logger.info("Sending response to local app at {}", replyQueueUrl);
             LocalAppResponse response = LocalAppResponse.taskComplete(inputFileS3Key, summaryKey);
+
+            // Note: Manager needs permissions to send to this dynamically created queue
+            // Ideally, LocalApp gave permissions or it's same account
             sqsService.sendMessage(replyQueueUrl, response);
 
             // 5. Cleanup Job
-            jobTracker.removeJob(inputFileS3Key);
+            jobTracker.removeJob(jobId);
 
         } catch (Exception e) {
             logger.error("Failed to handle job completion", e);

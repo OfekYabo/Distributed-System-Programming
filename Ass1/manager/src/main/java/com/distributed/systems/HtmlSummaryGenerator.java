@@ -13,11 +13,7 @@ public class HtmlSummaryGenerator {
 
     private static final Logger logger = LoggerFactory.getLogger(HtmlSummaryGenerator.class);
 
-    private final S3Service s3Service;
-
-    public HtmlSummaryGenerator(S3Service s3Service) {
-        this.s3Service = s3Service;
-    }
+    // No constructor needed - fully static
 
     /**
      * Generates an HTML summary from task results
