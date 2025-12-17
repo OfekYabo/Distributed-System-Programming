@@ -161,13 +161,30 @@ public class WorkerScaler implements Runnable {
     }
 
     private void terminateWorkersGracefully(int count) {
-        // Send 'count' Poison Pill messages to the Control Queue
-        for (int i = 0; i < count; i++) {
+        // limit the number of termination messages to avoid flooding the queue if
+        // workers are slow to consume
+        int currentPending = 0;
+        try {
+            currentPending = sqsService.getApproximateMessageCount(workerControlQueue);
+        } catch (Exception e) {
+            logger.warn("Could not get pending messages count for {}, assuming 0", workerControlQueue);
+        }
+
+        int actuallyNeeded = count - currentPending;
+        if (actuallyNeeded <= 0) {
+            logger.info("Scaling DOWN: {} termination messages already pending (needed {}), skipping send.",
+                    currentPending, count);
+            return;
+        }
+
+        // Send 'excess' Poison Pill messages to the Control Queue
+        for (int i = 0; i < actuallyNeeded; i++) {
             com.distributed.systems.shared.model.WorkerTaskMessage terminateMsg = com.distributed.systems.shared.model.WorkerTaskMessage
                     .createTerminate();
             sqsService.sendMessage(workerControlQueue, terminateMsg);
         }
-        logger.info("Sent {} termination messages to {}", count, workerControlQueue);
+        logger.info("Sent {} termination messages to {} (pending before: {})", actuallyNeeded, workerControlQueue,
+                currentPending);
     }
 
     private void launchWorkers(int count) {
@@ -255,6 +272,10 @@ public class WorkerScaler implements Runnable {
             logger.error("Error getting worker count: {}", e.getMessage());
             return 0;
         }
+    }
+
+    public int getMaxWorkerInstances() {
+        return maxWorkerInstances;
     }
 
     /**

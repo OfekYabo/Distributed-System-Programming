@@ -62,6 +62,7 @@ public class Worker {
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
     private final int idleShutdownSeconds;
+    private final String resultsPrefix;
 
     public Worker(AppConfig config) {
         this.running = new AtomicBoolean(true);
@@ -75,7 +76,12 @@ public class Worker {
         this.maxMessages = config.getIntOptional(MAX_MESSAGES_KEY, 1);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 90);
+
         this.idleShutdownSeconds = config.getIntOptional(IDLE_SHUTDOWN_KEY, 60); // Default 60s idle timeout
+        // Load S3 Results Prefix (default: workers-results) for metadata placement
+        String configuredPrefix = config.getOptional("S3_WORKER_RESULTS_PREFIX", "workers-results");
+        // Ensure consistent path structure for metadata
+        this.resultsPrefix = configuredPrefix;
 
         // Initialize AWS clients
         SqsClient sqsClient = SqsClient.builder().region(Region.of(awsRegion)).build();
@@ -252,7 +258,8 @@ public class Worker {
     private void sendSuccessResponse(String fileUrl, String outputUrl, String parsingMethod, String jobId) {
         // Always upload metadata for success
         try {
-            String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+            // Use resultsPrefix for metadata too: workers-results/JOBID/metadata/UUID.json
+            String metadataS3Key = resultsPrefix + "/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
             TaskResultMetadata metadata = new TaskResultMetadata(
                     fileUrl, parsingMethod, outputUrl, true, null);
             String metadataJson = new ObjectMapper().writeValueAsString(metadata);
@@ -268,7 +275,7 @@ public class Worker {
     private void sendErrorResponse(String fileUrl, String parsingMethod, String error, String jobId) {
         // Always upload metadata for error
         try {
-            String metadataS3Key = "results/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
+            String metadataS3Key = resultsPrefix + "/" + jobId + "/metadata/" + java.util.UUID.randomUUID() + ".json";
             TaskResultMetadata metadata = new TaskResultMetadata(
                     fileUrl, parsingMethod, null, false, error);
             String metadataJson = new ObjectMapper().writeValueAsString(metadata);

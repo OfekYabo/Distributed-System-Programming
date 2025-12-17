@@ -32,7 +32,6 @@ public class Manager {
     private static final String AWS_REGION_KEY = "AWS_REGION";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
     private static final String LOCAL_APP_INPUT_QUEUE_KEY = "LOCAL_APP_INPUT_QUEUE";
-    private static final String LOCAL_APP_OUTPUT_QUEUE_KEY = "LOCAL_APP_OUTPUT_QUEUE";
     private static final String WORKER_INPUT_QUEUE_KEY = "WORKER_INPUT_QUEUE";
     private static final String WORKER_OUTPUT_QUEUE_KEY = "WORKER_OUTPUT_QUEUE";
     private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
@@ -230,8 +229,11 @@ public class Manager {
         int activeJobs = jobTracker.getActiveJobCount();
         int pendingTasks = jobTracker.getTotalPendingTasks();
         int runningWorkers = workerScaler.getRunningWorkerCount();
+        int wantedWorkers = jobTracker.getGlobalNeededWorkers();
+        int maxWorkers = workerScaler.getMaxWorkerInstances();
 
-        logger.info("jobs={} pending={} workers={}", activeJobs, pendingTasks, runningWorkers);
+        logger.info("jobs={} pending={} workers={} (wanted={}, max={})",
+                activeJobs, pendingTasks, runningWorkers, wantedWorkers, maxWorkers);
     }
 
     /**
@@ -286,8 +288,8 @@ public class Manager {
                 // Since we closed services, let's just make a fresh client for the final kill
                 // command
                 // to be safe and independent of shared service state.
-                try (Ec2Client killerClient = Ec2Client.builder().region(Region.of(awsRegion)).build()) {
-                    Ec2Service killerService = new Ec2Service(killerClient);
+                try (Ec2Client killerClient = Ec2Client.builder().region(Region.of(awsRegion)).build();
+                        Ec2Service killerService = new Ec2Service(killerClient)) {
                     killerService.terminateInstance(instanceId);
                 }
             } else {

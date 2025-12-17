@@ -37,6 +37,7 @@ public class WorkerResultsListener implements Runnable {
     private final String workerOutputQueue;
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
+    private final String resultsPrefix;
 
     public WorkerResultsListener(AppConfig config,
             SqsService sqsService,
@@ -52,6 +53,7 @@ public class WorkerResultsListener implements Runnable {
         this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
+        this.resultsPrefix = config.getOptional("S3_WORKER_RESULTS_PREFIX", "workers-results");
     }
 
     @Override
@@ -135,7 +137,7 @@ public class WorkerResultsListener implements Runnable {
         try {
             // 1. Aggregate results from S3 Metadata
             logger.info("Aggregating results from S3 for JobId: {}", jobId);
-            String metadataPrefix = "results/" + jobId + "/metadata/";
+            String metadataPrefix = resultsPrefix + "/" + jobId + "/metadata/";
             List<String> metadataKeys = s3Service.listObjects(metadataPrefix);
 
             List<TaskResultMetadata> aggregatedResults = new ArrayList<>();
@@ -144,7 +146,37 @@ public class WorkerResultsListener implements Runnable {
                     String json = s3Service.downloadAsString(key);
                     TaskResultMetadata meta = new com.fasterxml.jackson.databind.ObjectMapper()
                             .readValue(json, TaskResultMetadata.class);
-                    aggregatedResults.add(meta);
+
+                    // Generate Presigned URL if possible
+                    String presignedUrl = meta.getOutputS3Url();
+                    if (meta.getOutputS3Url() != null && meta.getOutputS3Url().startsWith("s3://")) {
+                        try {
+                            // Extract key from s3://bucket/key
+                            String s3Url = meta.getOutputS3Url();
+                            String[] parts = s3Url.substring(5).split("/", 2);
+                            if (parts.length == 2) {
+                                String objectKey = parts[1];
+                                // Re-use current bucket name from service or use what's in URL?
+                                // S3Service is bound to a bucket. Currently assuming same bucket.
+                                // Ideally extract bucket from URL too but we trust S3Service.
+                                presignedUrl = s3Service.generatePresignedUrl(objectKey);
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Could not generate presigned URL for {}: {}", meta.getOutputS3Url(),
+                                    e.getMessage());
+                        }
+                    }
+
+                    // Create new metadata with presigned URL
+                    // Note: TaskResultMetadata is immutable. We need to create a new one.
+                    TaskResultMetadata newMeta = new TaskResultMetadata(
+                            meta.getOriginalUrl(),
+                            meta.getParsingMethod(),
+                            presignedUrl, // Use Presigned URL here instead of raw S3 link
+                            meta.isSuccess(),
+                            meta.getErrorMessage());
+
+                    aggregatedResults.add(newMeta);
 
                     // Optional: Delete metadata file after reading
                     s3Service.deleteFile(key);
