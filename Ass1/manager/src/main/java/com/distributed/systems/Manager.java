@@ -128,6 +128,7 @@ public class Manager {
      */
     public void start() {
         logger.info("=== Manager Starting ===");
+        System.out.println("DEBUG: Manager application starting (v2 - with env export fix)...");
 
         // Ensure all SQS queues exist
         ensureQueuesExist();
@@ -302,14 +303,52 @@ public class Manager {
      * Main entry point
      */
     public static void main(String[] args) {
+        // 1. Immediate Printf Debugging - Visible in /var/log/manager.log
+        System.out.println("=================================================");
+        System.out.println("DEBUG: Manager Process Starting (Robust Loader)");
+        System.out.println("DEBUG: Current Time: " + System.currentTimeMillis());
+
+        try {
+            // 2. Load .env file explicitly into System Properties
+            // This ensures Logback (AWS_REGION) and AWS SDK (Credentials) see them
+            // even if they weren't exported to Shell Env
+            java.io.File envFile = new java.io.File(".env");
+            if (envFile.exists()) {
+                System.out.println("DEBUG: Found .env file, loading variables...");
+                java.util.List<String> lines = java.nio.file.Files.readAllLines(envFile.toPath());
+                for (String line : lines) {
+                    if (line.trim().isEmpty() || line.startsWith("#"))
+                        continue;
+                    String[] parts = line.split("=", 2);
+                    if (parts.length == 2) {
+                        String key = parts[0].trim();
+                        String value = parts[1].trim();
+                        // Set as System Property (overrides env vars for Java libs)
+                        System.setProperty(key, value);
+                        // Also helpful for debug (mask secrets)
+                        if (!key.contains("SECRET")) {
+                            System.out.println("DEBUG: Set Property: " + key + "=" + value);
+                        }
+                    }
+                }
+            } else {
+                System.out.println("DEBUG: WARNING - No .env file found!");
+            }
+        } catch (Exception e) {
+            System.err.println("DEBUG: Failed to load .env file: " + e.getMessage());
+            e.printStackTrace();
+        }
+
         logger.info("=== Manager Application Starting ===");
 
         try {
-            AppConfig config = new AppConfig();
+            AppConfig config = new AppConfig(); // Now sees System Properties
             Manager manager = new Manager(config);
             manager.start();
         } catch (Exception e) {
             logger.error("Fatal error in manager: {}", e.getMessage());
+            System.err.println("FATAL MANAGER ERROR: " + e.getMessage());
+            e.printStackTrace();
             System.exit(1);
         }
 
