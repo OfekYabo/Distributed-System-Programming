@@ -355,13 +355,32 @@ public class Worker {
                     .connectTimeout(Duration.ofSeconds(2))
                     .build();
 
-            // Try IMDSv1 first (simpler)
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://169.254.169.254/latest/meta-data/instance-id"))
-                    .GET()
-                    .build();
+            // Try IMDSv2 (Token-based)
+            String token = null;
+            try {
+                HttpRequest tokenRequest = HttpRequest.newBuilder()
+                        .uri(URI.create("http://169.254.169.254/latest/api/token"))
+                        .header("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+                        .PUT(HttpRequest.BodyPublishers.noBody())
+                        .build();
+                HttpResponse<String> tokenResponse = client.send(tokenRequest, HttpResponse.BodyHandlers.ofString());
+                if (tokenResponse.statusCode() == 200) {
+                    token = tokenResponse.body();
+                }
+            } catch (Exception ignored) {
+                // Fallback to IMDSv1 if token request fails (e.g., timeout or old instance)
+            }
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            // Get Instance ID (with token if available)
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                    .uri(URI.create("http://169.254.169.254/latest/meta-data/instance-id"))
+                    .GET();
+
+            if (token != null) {
+                requestBuilder.header("X-aws-ec2-metadata-token", token);
+            }
+
+            HttpResponse<String> response = client.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return response.body();
             }

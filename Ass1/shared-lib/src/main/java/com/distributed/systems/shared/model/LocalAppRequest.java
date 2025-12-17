@@ -67,9 +67,6 @@ public class LocalAppRequest {
         @JsonProperty("n")
         private int n; // files per worker ratio
 
-        @JsonProperty("replyQueueUrl")
-        private String replyQueueUrl;
-
         @JsonProperty("jobId")
         private String jobId;
 

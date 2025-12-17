@@ -27,7 +27,6 @@ public class WorkerScaler implements Runnable {
     private static final String SCALING_INTERVAL_KEY = "SCALING_INTERVAL_SECONDS";
     private static final String SCALE_UP_INTERVAL_KEY = "WORKER_SCALE_UP_INTERVAL_SECONDS";
     private static final String SCALE_DOWN_INTERVAL_KEY = "WORKER_SCALE_DOWN_INTERVAL_SECONDS";
-    private static final String WORKER_QUEUE_KEY = "WORKER_INPUT_QUEUE";
     private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
     private static final String MAX_INSTANCES_KEY = "WORKER_MAX_INSTANCES";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
@@ -49,7 +48,6 @@ public class WorkerScaler implements Runnable {
     private final int scalingIntervalSeconds;
     private final int scaleUpIntervalSeconds;
     private final int scaleDownIntervalSeconds;
-    private final String workerQueue;
     private final String workerControlQueue;
     private final int maxWorkerInstances;
     private final String s3BucketName;
@@ -75,7 +73,6 @@ public class WorkerScaler implements Runnable {
         this.scalingIntervalSeconds = config.getIntOptional(SCALING_INTERVAL_KEY, 10);
         this.scaleUpIntervalSeconds = config.getIntOptional(SCALE_UP_INTERVAL_KEY, 10);
         this.scaleDownIntervalSeconds = config.getIntOptional(SCALE_DOWN_INTERVAL_KEY, 30);
-        this.workerQueue = config.getString(WORKER_QUEUE_KEY);
         this.workerControlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
         this.maxWorkerInstances = config.getIntOptional(MAX_INSTANCES_KEY, 10);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);

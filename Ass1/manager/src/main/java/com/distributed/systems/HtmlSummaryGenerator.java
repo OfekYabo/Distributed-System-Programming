@@ -1,6 +1,5 @@
 package com.distributed.systems;
 
-import com.distributed.systems.shared.service.S3Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
