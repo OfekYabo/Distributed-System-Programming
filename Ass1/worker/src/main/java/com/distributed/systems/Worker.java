@@ -44,8 +44,6 @@ public class Worker {
     private static final String VISIBILITY_TIMEOUT_KEY = "VISIBILITY_TIMEOUT_SECONDS";
     private static final String MAX_MESSAGES_KEY = "WORKER_MAX_MESSAGES";
 
-    private static final String IDLE_SHUTDOWN_KEY = "WORKER_IDLE_SHUTDOWN_SECONDS";
-
     private final SqsService sqsService;
     private final S3Service s3Service;
     private final Ec2Service ec2Service;
@@ -61,7 +59,7 @@ public class Worker {
     private final int maxMessages;
     private final int waitTimeSeconds;
     private final int visibilityTimeout;
-    private final int idleShutdownSeconds;
+
     private final String resultsPrefix;
 
     public Worker(AppConfig config) {
@@ -77,7 +75,6 @@ public class Worker {
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 90);
 
-        this.idleShutdownSeconds = config.getIntOptional(IDLE_SHUTDOWN_KEY, 60); // Default 60s idle timeout
         // Load S3 Results Prefix (default: workers-results) for metadata placement
         String configuredPrefix = config.getOptional("S3_WORKER_RESULTS_PREFIX", "workers-results");
         // Ensure consistent path structure for metadata
@@ -95,7 +92,7 @@ public class Worker {
         // Initialize task processor
         this.taskProcessor = new TaskProcessor(config, s3Service);
 
-        logger.info("Worker initialized. Idle shutdown set to {} seconds.", idleShutdownSeconds);
+        logger.info("Worker initialized.");
     }
 
     /**
@@ -106,8 +103,6 @@ public class Worker {
 
         // Setup shutdown hook for graceful termination
         setupShutdownHook();
-
-        long lastActivityTime = System.currentTimeMillis();
 
         // Main processing loop
         while (running.get()) {
@@ -131,7 +126,6 @@ public class Worker {
                         visibilityTimeout);
 
                 if (!messages.isEmpty()) {
-                    lastActivityTime = System.currentTimeMillis();
                     // Process each message
                     for (Message message : messages) {
                         if (!running.get()) {
@@ -139,16 +133,7 @@ public class Worker {
                         }
                         processMessage(message);
                     }
-                    // Update activity time again after processing
-                    lastActivityTime = System.currentTimeMillis();
-                } else {
-                    // Check for idle timeout
-                    if (System.currentTimeMillis() - lastActivityTime > idleShutdownSeconds * 1000L) {
-                        logger.info("Worker idle for {} seconds. Shutting down.", idleShutdownSeconds);
-                        running.set(false);
-                    }
                 }
-
             } catch (Exception e) {
                 logger.error("Error in main loop", e);
                 // Continue running even if there's an error
