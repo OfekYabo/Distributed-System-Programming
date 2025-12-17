@@ -183,7 +183,7 @@ public class LocalAppListener implements Runnable {
 
             // Send tasks to worker queue
             for (JobTracker.TaskInfo task : tasks) {
-                WorkerTaskMessage taskMessage = WorkerTaskMessage.create(task.parsingMethod, task.url);
+                WorkerTaskMessage taskMessage = WorkerTaskMessage.create(task.url, task.parsingMethod);
                 sqsService.sendMessage(workerQueueUrl, taskMessage);
             }
 
