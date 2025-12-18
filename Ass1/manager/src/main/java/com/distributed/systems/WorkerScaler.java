@@ -28,7 +28,7 @@ public class WorkerScaler implements Runnable {
     private static final String SCALE_UP_INTERVAL_KEY = "WORKER_SCALE_UP_INTERVAL_SECONDS";
     private static final String SCALE_DOWN_INTERVAL_KEY = "WORKER_SCALE_DOWN_INTERVAL_SECONDS";
     private static final String WORKER_CONTROL_QUEUE_KEY = "WORKER_CONTROL_QUEUE";
-    private static final String MAX_INSTANCES_KEY = "WORKER_MAX_INSTANCES";
+    private static final String MAX_INSTANCES_KEY = "MAX_WORKER_INSTANCES";
     private static final String S3_BUCKET_KEY = "S3_BUCKET_NAME";
 
     // AWS Config
