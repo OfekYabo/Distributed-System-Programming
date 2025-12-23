@@ -8,7 +8,7 @@
     </appender>
 
     <!-- CloudWatch appender for centralized logging -->
-    <appender name="CLOUDWATCH" class="com.distributed.systems.logging.CloudWatchAppender">
+    <appender name="CLOUDWATCH" class="com.distributed.systems.shared.logging.CloudWatchAppender">
         <logGroupName>/distributed-systems/manager</logGroupName>
         <!-- logStreamName is auto-generated from hostname if not specified -->
         <region>${AWS_REGION:-us-east-1}</region>

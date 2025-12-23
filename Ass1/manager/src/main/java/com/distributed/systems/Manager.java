@@ -51,7 +51,6 @@ public class Manager {
     private final String awsRegion;
     private final String s3BucketName;
     private final String localAppInputQueue;
-    // private final String localAppOutputQueue; // Removed as unused
     private final String workerInputQueue;
     private final String workerOutputQueue;
     private final String workerControlQueue;
@@ -84,7 +83,6 @@ public class Manager {
         this.awsRegion = config.getString(AWS_REGION_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
-        // this.localAppOutputQueue = config.getString(LOCAL_APP_OUTPUT_QUEUE_KEY);
         this.workerInputQueue = config.getString(WORKER_INPUT_QUEUE_KEY);
         this.workerOutputQueue = config.getString(WORKER_OUTPUT_QUEUE_KEY);
         this.workerControlQueue = config.getOptional(WORKER_CONTROL_QUEUE_KEY, "WorkerControlQueue");
@@ -127,7 +125,6 @@ public class Manager {
      */
     public void start() {
         logger.info("=== Manager Starting ===");
-        System.out.println("DEBUG: Manager application starting (v2 - with env export fix)...");
 
         // Ensure all SQS queues exist
         ensureQueuesExist();
@@ -155,9 +152,6 @@ public class Manager {
     private void ensureQueuesExist() {
         // Ensure queues exist
         sqsService.createQueueIfNotExists(localAppInputQueue, visibilityTimeout, waitTimeSeconds);
-        // Removed LOCAL_APP_OUTPUT_QUEUE as per user request (redundant)
-        // sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout,
-        // waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerInputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerOutputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(workerControlQueue, visibilityTimeout, waitTimeSeconds);
@@ -382,18 +376,12 @@ public class Manager {
      * Main entry point
      */
     public static void main(String[] args) {
-        // 1. Immediate Printf Debugging - Visible in /var/log/manager.log
-        System.out.println("=================================================");
-        System.out.println("DEBUG: Manager Process Starting (Robust Loader)");
-        System.out.println("DEBUG: Current Time: " + System.currentTimeMillis());
-
         try {
             // 2. Load .env file explicitly into System Properties
             // This ensures Logback (AWS_REGION) and AWS SDK (Credentials) see them
             // even if they weren't exported to Shell Env
             java.io.File envFile = new java.io.File(".env");
             if (envFile.exists()) {
-                System.out.println("DEBUG: Found .env file, loading variables...");
                 java.util.List<String> lines = java.nio.file.Files.readAllLines(envFile.toPath());
                 for (String line : lines) {
                     if (line.trim().isEmpty() || line.startsWith("#"))
@@ -404,18 +392,13 @@ public class Manager {
                         String value = parts[1].trim();
                         // Set as System Property (overrides env vars for Java libs)
                         System.setProperty(key, value);
-                        // Also helpful for debug (mask secrets)
-                        if (!key.contains("SECRET")) {
-                            System.out.println("DEBUG: Set Property: " + key + "=" + value);
-                        }
                     }
                 }
             } else {
-                System.out.println("DEBUG: WARNING - No .env file found!");
+                logger.warn("No .env file found");
             }
         } catch (Exception e) {
-            System.err.println("DEBUG: Failed to load .env file: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Failed to load .env file", e);
         }
 
         logger.info("=== Manager Application Starting ===");
@@ -426,7 +409,6 @@ public class Manager {
             manager.start();
         } catch (Exception e) {
             logger.error("Fatal error in manager: {}", e.getMessage());
-            System.err.println("FATAL MANAGER ERROR: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
         }
