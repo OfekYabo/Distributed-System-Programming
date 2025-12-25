@@ -127,7 +127,7 @@ Write-Host "`n================================================" -ForegroundColor
 Write-Host "  Building Local App" -ForegroundColor Cyan
 Write-Host "================================================"
 Push-Location local-app
-cmd /c "mvn clean package -DskipTests -q"
+cmd /c "mvn clean install -DskipTests -q"
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Local App built successfully." -ForegroundColor Green
     # Local App is not uploaded to S3, just built for local usage

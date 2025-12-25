@@ -1,5 +1,10 @@
 # Distributed Text Analysis System
-**Authors:** Ofek Yabo
+**Authors:** 
+
+Ofek Yabo, ID: 209288588
+
+Amit Zarhi, ID: 208230235
+
 **Course:** Distributed Systems Programming - Assignment 1
 
 ## Overview
@@ -18,13 +23,13 @@ The system consists of three main components:
     -   **Orchestrator**: Runs on a permanent EC2 instance.
     -   **Job Tracker**: Manages multiple concurrent jobs. Calculates the *global* worker need by summing the requirements of all active jobs.
     -   **Auto-Scaler**: Monitors the global workload and dynamically launches/terminates **Worker** instances.
-    -   **Aggregator**: Collects results from Workers, stores them in S3, and generates a final HTML summary.
+    -   **Aggregator**: Collects results from Workers, monitors jobs progress, updates the needed workers count and generates a final HTML summary to S3.
     -   **Fault Tolerance**: Relies on SQS **Visibility Timeout**. If a worker crashes or fails to delete a message within the timeout (1000s), SQS automatically makes the task visible again for another worker to pick up.
 
 3.  **Worker (Node)**:
     -   **Processor**: Runs on transient EC2 instances.
     -   **Stateless**: Pulls tasks from SQS, processes them using Stanford NLP, and uploads results to S3.
-    -   **Robustness**: Handles large files by spilling to disk if RAM usage > 50MB.
+    -   **Robustness**: Handles large files by spilling to disk if RAM usage < 50MB.
 
 ## Concurrency & Threading Model
 The system uses multi-threading to handle asynchronous operations efficiently.
@@ -37,7 +42,7 @@ The Manager uses a `FixedThreadPool` of 3 threads plus the main thread:
 *   **WorkerScaler Thread**: Periodic thread (runs every 30s) that checks `JobTracker.getGlobalNeededWorkers()` vs. `EC2.getRunningInstances()` and scales up/down.
 
 ### 2. Worker (2 Threads)
-*   **Main Thread**: Continuously polls SQS for new tasks.
+*   **Main Thread**: Lifecycle manager. Polls for a task, submits it to the executor, and waits for completion (monitoring for timeouts).
 *   **TaskExecutor Thread**: A `SingleThreadExecutor` used to run the actual parsing logic (`TaskProcessor`) with a strict timeout. If the parser hangs, the Main Thread can kill the executor and restart it (Nuclear Option) to keep the Worker alive.
 
 ### 3. Local App (1 Thread)
@@ -134,6 +139,41 @@ The system employs a multi-queue design to effectively separate concerns, ensure
 *   **Purpose**: Asynchronous notifications that a task is done (or failed).
 *   **Design Choice**: **Asynchronous Aggregation**. Workers don't wait for the Manager to acknowledge. They "fire and forget" the completion status. This decouples the high-speed processing (Worker) from the accounting/tracking (Manager), minimizing the risk of bottlenecks.
 
+## Critical Analysis & Scalability
+
+### 1. Scalability (1 Million to 1 Billion Clients)
+*   **Horizontal Scaling**: The system is designed to scale horizontally. Since the Manager and Workers are decoupled via SQS, we can theoretically add thousands of Worker instances.
+*   **Bottlenecks**:
+    *   **Manager**: The Manager is currently a Single Point of Failure (SPOF) and a potential bottleneck. For 1 billion clients, a single EC2 instance cannot handle the thread management and aggregation.
+    *   **Solution**: To scale to billions, we would need to shard the Manager (e.g., one Manager per region or per user group) or replace the Manager with a serverless architecture (AWS Lambda) triggered by S3 events.
+
+### 2. Persistence & Fault Tolerance
+*   **Node Death**: If a Worker node dies (power failure, crash), the SQS **Visibility Timeout** ensures the message reappears in the queue after 1000s. Another worker will pick it up. The task is never lost.
+*   **Decoupled State**: The state is stored in SQS (tasks) and S3 (results). The Manager is mostly stateless regarding task progress (it recovers state by checking SQS/S3, though strictly speaking, our current in-memory `JobTracker` would lose counters on crash—a trade-off for simplicity).
+*   **Broken Communication**: Use of AWS SDKs with built-in retry logic ensures transient network failures are handled gracefully.
+
+### 3. Threading Rationale
+*   **Why Threads?**: We use threads in the Manager (`LocalAppListener`, `WorkerResultsListener`) because we are **I/O bound**. Most time is spent waiting for network responses (SQS/S3). Blocking the main thread for these operations would freeze the system.
+*   **Why Not More?**: We limited threads to a fixed pool to prevent context-switching overhead.
+*   **Workers**: Use a single processing thread + a monitoring thread. This simplifies logic; since each worker runs on a dedicated core/instance, adding more threads to a single worker for CPU-intensive NLP (Constituency Parsing) would just cause contention.
+
+### 4. Worker Utilization
+*   **"Working Hard?"**: Yes. The **Competing Consumers** pattern ensures that as soon as a worker finishes, it grabs the next task. No worker sits idle if there is work to do.
+*   **Load Balancing**: SQS handles this natively. We don't need complex round-robin logic in the Manager.
+
+### 5. Distributed Nature
+*   **Nothing Waits**: The Local App sends a request and *polls*. The Manager sends tasks and *continues*. Workers process and *upload*. No component statically waits for another component to be "online" in a synchronized socket connection. This is a truly asynchronous distributed system.
+
+## Performance Statistics (Sample Run)
+*   **Instance Types Used**:
+    *   Manager: `t2.micro`
+    *   Workers: `t3.medium`
+*   **Input File**: `input-sample.txt` (the given example file)
+*   **n (Workers Ratio)**: `1`
+*   **Total Execution Time**: 
+    *   **Cold Start** (Launching Manager + Workers): ~345 seconds (~5.7 mins)
+    *   **Warm Start** (Launching Workers, Manager already running): ~290 seconds (~4.8 mins)
+
 ## How to Run
 
 ### Prerequisites
@@ -151,6 +191,6 @@ The system employs a multi-queue design to effectively separate concerns, ensure
     *   `s3://ds-assignment-1-ofek/worker.jar`
 3.  **Run Client**:
     ```bash
-    java -jar local-app/target/local-app-1.0-SNAPSHOT.jar input.txt output.html 10
+    java -jar local-app/target/local-app-1.0-SNAPSHOT.jar input.txt output.html 1
     ```
-    *   `n=10`: Tasks per worker ratio.
+    *   `n=1`: Tasks per worker ratio.
