@@ -5,7 +5,34 @@ Ofek Yabo, ID: 209288588
 
 Amit Zarhi, ID: 208230235
 
+
 **Course:** Distributed Systems Programming - Assignment 1
+
+## Table of Contents
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Concurrency & Threading Model](#concurrency--threading-model)
+    - [1. Manager (4 Threads)](#1-manager-4-threads)
+    - [2. Worker (2 Threads)](#2-worker-2-threads)
+    - [3. Local App (1 Thread)](#3-local-app-1-thread)
+- [Workflow Dynamics](#workflow-dynamics)
+- [Configuration (.env)](#configuration-env)
+    - [AWS & Resources](#aws--resources)
+    - [Queues (SQS)](#queues-sqs)
+    - [Performance](#performance)
+    - [Worker Logic](#worker-logic)
+- [Design Considerations](#design-considerations)
+    - [Memory Efficiency & Scalability](#memory-efficiency--scalability)
+    - [Why SQS?](#why-sqs)
+    - [SQS Architecture & Message Flow](#sqs-architecture--message-flow)
+- [Critical Analysis & Scalability](#critical-analysis--scalability)
+    - [1. Scalability](#1-scalability-1-million-to-1-billion-clients)
+    - [2. Persistence & Fault Tolerance](#2-persistence--fault-tolerance)
+    - [3. Threading Rationale](#3-threading-rationale)
+    - [4. Worker Utilization](#4-worker-utilization)
+    - [5. Distributed Nature](#5-distributed-nature)
+- [Performance Statistics](#performance-statistics-sample-run)
+- [How to Run](#how-to-run)
 
 ## Overview
 A scalable, distributed system for processing large-scale text analysis tasks on AWS. The system parses text files from URLs using Stanford NLP models (POS Tagging, Constituency Parsing, Dependency Parsing) and aggregates results. It is built to be robust, fault-tolerant, and dynamic.
@@ -29,7 +56,7 @@ The system consists of three main components:
 3.  **Worker (Node)**:
     -   **Processor**: Runs on transient EC2 instances.
     -   **Stateless**: Pulls tasks from SQS, processes them using Stanford NLP, and uploads results to S3.
-    -   **Robustness**: Handles large files by spilling to disk if RAM usage < 50MB.
+    -   **Robustness**: Handles large files by spilling to disk if RAM usage > 50MB.
 
 ## Concurrency & Threading Model
 The system uses multi-threading to handle asynchronous operations efficiently.
