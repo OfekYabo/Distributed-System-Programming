@@ -9,11 +9,9 @@
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
-  <artifactId>worker</artifactId>
+  <artifactId>manager</artifactId>
 
-  <name>worker</name>
-  <!-- FIXME change it to the project's website -->
-  <url>http://www.example.com</url>
+  <name>manager</name>
 
   <dependencies>
     <dependency>
@@ -31,30 +29,9 @@
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>sqs</artifactId>
     </dependency>
-
-    <!-- Stanford Parser -->
     <dependency>
-      <groupId>edu.stanford.nlp</groupId>
-      <artifactId>stanford-parser</artifactId>
-      <version>3.6.0</version>
-    </dependency>
-    <dependency>
-      <groupId>edu.stanford.nlp</groupId>
-      <artifactId>stanford-parser</artifactId>
-      <version>3.6.0</version>
-      <classifier>models</classifier>
-    </dependency>
-    <!-- Stanford CoreNLP with models (includes POS tagger models) -->
-    <dependency>
-      <groupId>edu.stanford.nlp</groupId>
-      <artifactId>stanford-corenlp</artifactId>
-      <version>3.6.0</version>
-    </dependency>
-    <dependency>
-      <groupId>edu.stanford.nlp</groupId>
-      <artifactId>stanford-corenlp</artifactId>
-      <version>3.6.0</version>
-      <classifier>models</classifier>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>ec2</artifactId>
     </dependency>
 
     <!-- Jackson for JSON -->
@@ -63,7 +40,7 @@
       <artifactId>jackson-databind</artifactId>
     </dependency>
 
-    <!-- Logging with Logback (for CloudWatch integration) -->
+    <!-- Logging with Logback (supports colors and custom formatting) -->
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
@@ -89,14 +66,12 @@
   </dependencies>
 
   <build>
-    <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
+    <pluginManagement>
       <plugins>
-        <!-- clean lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#clean_Lifecycle -->
         <plugin>
           <artifactId>maven-clean-plugin</artifactId>
           <version>3.1.0</version>
         </plugin>
-        <!-- default lifecycle, jar packaging: see https://maven.apache.org/ref/current/maven-core/default-bindings.html#Plugin_bindings_for_jar_packaging -->
         <plugin>
           <artifactId>maven-resources-plugin</artifactId>
           <version>3.0.2</version>
@@ -115,7 +90,7 @@
           <configuration>
             <archive>
               <manifest>
-                <mainClass>com.distributed.systems.Worker</mainClass>
+                <mainClass>com.distributed.systems.Manager</mainClass>
               </manifest>
             </archive>
           </configuration>
@@ -128,7 +103,6 @@
           <artifactId>maven-deploy-plugin</artifactId>
           <version>2.8.2</version>
         </plugin>
-        <!-- site lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#site_Lifecycle -->
         <plugin>
           <artifactId>maven-site-plugin</artifactId>
           <version>3.7.1</version>
@@ -154,12 +128,11 @@
             <configuration>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>com.distributed.systems.Worker</mainClass>
+                  <mainClass>com.distributed.systems.Manager</mainClass>
                 </transformer>
               </transformers>
               <filters>
                 <filter>
-                  <!-- Exclude signature files from dependencies -->
                   <artifact>*:*</artifact>
                   <excludes>
                     <exclude>META-INF/*.SF</exclude>

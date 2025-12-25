@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Analysis Results</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .result {
+      background: white;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .success {
+      border-left: 4px solid #4CAF50;
+    }
+    .error {
+      border-left: 4px solid #f44336;
+    }
+    .analysis-type {
+      font-weight: bold;
+      color: #2196F3;
+    }
+    a {
+      color: #1976D2;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .error-msg {
+      color: #f44336;
+      font-style: italic;
+    }
+    .stats {
+      background: #e3f2fd;
+      padding: 10px 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Analysis Results</h1>
+  <div class="stats">
+    <strong>Total: 3</strong> |     <span style="color: #4CAF50;">Success: 3</span> |     <span style="color: #f44336;">Errors: 0</span>
+  </div>
+  <div class="result success">
+    <span class="analysis-type">POS</span>:     <a href="https://www.gutenberg.org/files/1661/1661-0.txt" target="_blank">https://www.gutenberg.org/files/1661/1661-0.txt</a>     <a href="https://ds-assignment-1-ofek.s3.amazonaws.com/workers-results/decf40f4-321d-4dcf-9e3e-9ab49c0311e7/POS-1661-0.txt?X-Amz-Security-Token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJGMEQCIFPnoiKdQDH00Knb792urcmenw4pJ9Bsq5tM%2BmWTfGQmAiBM6Vx4ljb9TnJPecAlq1bbeODhQp545FWe2VilVO4J4SrFBQiJ%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F8BEAAaDDIzNDU1NTc3NzYyMyIMtcG2baC5uj%2B%2BQVKEKpkFS%2BQJ84fdzYS7myhLzS93Re3mJ17LLzFJawyMYU5b8n3kqJD71phryCaLLwjWZVN06j69n9%2FtYXO5rWOgwQrkfEhplkpW5vjyWjB48AcVQh4NPFZLmQO7TEXKjB5IYkOlCub3lnukCK4GBFjqwQLVjhWbTxSjDY0De%2FMBc%2BLYZ5rqxkPxOC4bKDF8Ge3uQclPt7hiH2HMGvL04R7Nln6xB3MvFrW4Gq%2BQl0%2BSkkx4kYhZhOP3SiT%2B5ZHjaIfkS0nD8g5%2F0t28eGPwLaTRy4FwIWDPmGL%2BUm0BO35Rr8N4QlNP0MnnXwkN9cVk2m2x91XYFBsPu3K1ZTntxeYAmfwLJ58SuKiHn8b6BMD8eBjv2uYcXFHsyVp4auqTzmi53%2BjElOxwxH7M7WVGnHI5Xce5j7yZSQAIvsWdlaUFp4Bi2%2FKkbqE7KMtD%2BqmDFcWlji1dbrehKOqrFlprBYyp9zulKjjlOITdzH5BB%2F4v7I%2FZ9UYN%2BFxyFhA9N61EQieT0nIXs7piIlO3V1Dt5OqaJRH7Hxiyk6N1%2BSJ9bm9tV%2BvmaJMfJT9UUQPl50gmQ06UE17EhGkIIuADxrL4uIel0XXIMRvtLcYR6FqcVyutcENUolw9bHXxtORt516vKUZ6qW0X7rXKf1ew1Z87Ry5RcwHUVRV3%2B5CY7c%2BFxWLaHTEBtbPWlQf47pSA4q9kv6LswZi1CpMQA8NOvvBqURRH0CPMZMz1q5qBAqAZrTVmYWZWNvwwv%2FJy5LmBdHWxaMpsTHUM43MvciDA9GDbNdrB%2FVEqshxS8ummiRDuMy50rZzyHJ2FxU2R82qKRptjBhwq%2B3l50GR6QstI%2FuUTcQN1hrDlcB%2FXQpn9Tx%2FpUxOFXe7xeLHDAMdvU7c33GQwwPyMygY6sgFxvb9YZ395EYQrTFOmbPAoixVLe2VqxIfZXfpapJktF7BwtUYPmCGfnEgCqksTyFJkQoePQ6SDlJbeBYe7bIi%2BoZamdp4L7%2FKW2JqWB70iYOzs%2FIJuPnOfdTCYUzouizTP6L5JDwUlk3UBpopCWjno%2FDDeJQlwYCkk6qLAoqtuTzSAGmDSkuaIFdQFHLs8koY1p0z%2FPuju06cHso6TTR5A%2B%2BsWsDcw0MChw3QfATX5SeOZ&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Date=20251217T233805Z&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Expires=3600&amp;X-Amz-Credential=ASIATNHE5EJL56UQT4ZD%2F20251217%2Fus-east-1%2Fs3%2Faws4_request&amp;X-Amz-Signature=9be662f061622c25df605fc7a7d38d4cde645e676c949e9b6ab81dbb0ec44ffc" target="_blank">[Output]</a>
+  </div>
+  <div class="result success">
+    <span class="analysis-type">POS</span>:     <a href="https://www.gutenberg.org/files/1659/1659-0.txt" target="_blank">https://www.gutenberg.org/files/1659/1659-0.txt</a>     <a href="https://ds-assignment-1-ofek.s3.amazonaws.com/workers-results/decf40f4-321d-4dcf-9e3e-9ab49c0311e7/POS-1659-0.txt?X-Amz-Security-Token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJGMEQCIFPnoiKdQDH00Knb792urcmenw4pJ9Bsq5tM%2BmWTfGQmAiBM6Vx4ljb9TnJPecAlq1bbeODhQp545FWe2VilVO4J4SrFBQiJ%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F8BEAAaDDIzNDU1NTc3NzYyMyIMtcG2baC5uj%2B%2BQVKEKpkFS%2BQJ84fdzYS7myhLzS93Re3mJ17LLzFJawyMYU5b8n3kqJD71phryCaLLwjWZVN06j69n9%2FtYXO5rWOgwQrkfEhplkpW5vjyWjB48AcVQh4NPFZLmQO7TEXKjB5IYkOlCub3lnukCK4GBFjqwQLVjhWbTxSjDY0De%2FMBc%2BLYZ5rqxkPxOC4bKDF8Ge3uQclPt7hiH2HMGvL04R7Nln6xB3MvFrW4Gq%2BQl0%2BSkkx4kYhZhOP3SiT%2B5ZHjaIfkS0nD8g5%2F0t28eGPwLaTRy4FwIWDPmGL%2BUm0BO35Rr8N4QlNP0MnnXwkN9cVk2m2x91XYFBsPu3K1ZTntxeYAmfwLJ58SuKiHn8b6BMD8eBjv2uYcXFHsyVp4auqTzmi53%2BjElOxwxH7M7WVGnHI5Xce5j7yZSQAIvsWdlaUFp4Bi2%2FKkbqE7KMtD%2BqmDFcWlji1dbrehKOqrFlprBYyp9zulKjjlOITdzH5BB%2F4v7I%2FZ9UYN%2BFxyFhA9N61EQieT0nIXs7piIlO3V1Dt5OqaJRH7Hxiyk6N1%2BSJ9bm9tV%2BvmaJMfJT9UUQPl50gmQ06UE17EhGkIIuADxrL4uIel0XXIMRvtLcYR6FqcVyutcENUolw9bHXxtORt516vKUZ6qW0X7rXKf1ew1Z87Ry5RcwHUVRV3%2B5CY7c%2BFxWLaHTEBtbPWlQf47pSA4q9kv6LswZi1CpMQA8NOvvBqURRH0CPMZMz1q5qBAqAZrTVmYWZWNvwwv%2FJy5LmBdHWxaMpsTHUM43MvciDA9GDbNdrB%2FVEqshxS8ummiRDuMy50rZzyHJ2FxU2R82qKRptjBhwq%2B3l50GR6QstI%2FuUTcQN1hrDlcB%2FXQpn9Tx%2FpUxOFXe7xeLHDAMdvU7c33GQwwPyMygY6sgFxvb9YZ395EYQrTFOmbPAoixVLe2VqxIfZXfpapJktF7BwtUYPmCGfnEgCqksTyFJkQoePQ6SDlJbeBYe7bIi%2BoZamdp4L7%2FKW2JqWB70iYOzs%2FIJuPnOfdTCYUzouizTP6L5JDwUlk3UBpopCWjno%2FDDeJQlwYCkk6qLAoqtuTzSAGmDSkuaIFdQFHLs8koY1p0z%2FPuju06cHso6TTR5A%2B%2BsWsDcw0MChw3QfATX5SeOZ&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Date=20251217T233805Z&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Expires=3600&amp;X-Amz-Credential=ASIATNHE5EJL56UQT4ZD%2F20251217%2Fus-east-1%2Fs3%2Faws4_request&amp;X-Amz-Signature=d8dda1b72b2c3d3c35385313b91c4426a9fdd8b1c33c6466c8c66e2aef94166c" target="_blank">[Output]</a>
+  </div>
+  <div class="result success">
+    <span class="analysis-type">POS</span>:     <a href="https://www.gutenberg.org/files/1660/1660-0.txt" target="_blank">https://www.gutenberg.org/files/1660/1660-0.txt</a>     <a href="https://ds-assignment-1-ofek.s3.amazonaws.com/workers-results/decf40f4-321d-4dcf-9e3e-9ab49c0311e7/POS-1660-0.txt?X-Amz-Security-Token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJGMEQCIFPnoiKdQDH00Knb792urcmenw4pJ9Bsq5tM%2BmWTfGQmAiBM6Vx4ljb9TnJPecAlq1bbeODhQp545FWe2VilVO4J4SrFBQiJ%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F8BEAAaDDIzNDU1NTc3NzYyMyIMtcG2baC5uj%2B%2BQVKEKpkFS%2BQJ84fdzYS7myhLzS93Re3mJ17LLzFJawyMYU5b8n3kqJD71phryCaLLwjWZVN06j69n9%2FtYXO5rWOgwQrkfEhplkpW5vjyWjB48AcVQh4NPFZLmQO7TEXKjB5IYkOlCub3lnukCK4GBFjqwQLVjhWbTxSjDY0De%2FMBc%2BLYZ5rqxkPxOC4bKDF8Ge3uQclPt7hiH2HMGvL04R7Nln6xB3MvFrW4Gq%2BQl0%2BSkkx4kYhZhOP3SiT%2B5ZHjaIfkS0nD8g5%2F0t28eGPwLaTRy4FwIWDPmGL%2BUm0BO35Rr8N4QlNP0MnnXwkN9cVk2m2x91XYFBsPu3K1ZTntxeYAmfwLJ58SuKiHn8b6BMD8eBjv2uYcXFHsyVp4auqTzmi53%2BjElOxwxH7M7WVGnHI5Xce5j7yZSQAIvsWdlaUFp4Bi2%2FKkbqE7KMtD%2BqmDFcWlji1dbrehKOqrFlprBYyp9zulKjjlOITdzH5BB%2F4v7I%2FZ9UYN%2BFxyFhA9N61EQieT0nIXs7piIlO3V1Dt5OqaJRH7Hxiyk6N1%2BSJ9bm9tV%2BvmaJMfJT9UUQPl50gmQ06UE17EhGkIIuADxrL4uIel0XXIMRvtLcYR6FqcVyutcENUolw9bHXxtORt516vKUZ6qW0X7rXKf1ew1Z87Ry5RcwHUVRV3%2B5CY7c%2BFxWLaHTEBtbPWlQf47pSA4q9kv6LswZi1CpMQA8NOvvBqURRH0CPMZMz1q5qBAqAZrTVmYWZWNvwwv%2FJy5LmBdHWxaMpsTHUM43MvciDA9GDbNdrB%2FVEqshxS8ummiRDuMy50rZzyHJ2FxU2R82qKRptjBhwq%2B3l50GR6QstI%2FuUTcQN1hrDlcB%2FXQpn9Tx%2FpUxOFXe7xeLHDAMdvU7c33GQwwPyMygY6sgFxvb9YZ395EYQrTFOmbPAoixVLe2VqxIfZXfpapJktF7BwtUYPmCGfnEgCqksTyFJkQoePQ6SDlJbeBYe7bIi%2BoZamdp4L7%2FKW2JqWB70iYOzs%2FIJuPnOfdTCYUzouizTP6L5JDwUlk3UBpopCWjno%2FDDeJQlwYCkk6qLAoqtuTzSAGmDSkuaIFdQFHLs8koY1p0z%2FPuju06cHso6TTR5A%2B%2BsWsDcw0MChw3QfATX5SeOZ&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Date=20251217T233805Z&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Expires=3600&amp;X-Amz-Credential=ASIATNHE5EJL56UQT4ZD%2F20251217%2Fus-east-1%2Fs3%2Faws4_request&amp;X-Amz-Signature=bc693720f5a584191c6d68b86cc56df569f45e7c7b53d535466c012efb09a573" target="_blank">[Output]</a>
+  </div>
+</body>
+</html>

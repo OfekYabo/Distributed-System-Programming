@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for local visibility / user-data logs -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss} %-5level %logger{0} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- CloudWatch appender for centralized logging -->
+    <appender name="CLOUDWATCH" class="com.distributed.systems.shared.logging.CloudWatchAppender">
+        <logGroupName>/distributed-systems/worker</logGroupName>
+        <!-- logStreamName removed to allow auto-generation (Instance ID) -->
+        <region>us-east-1</region>
+        <batchSize>20</batchSize>
+        <flushIntervalMs>5000</flushIntervalMs>
+        <layout class="ch.qos.logback.classic.PatternLayout">
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </layout>
+    </appender>
+
+    <!-- Async wrapper for CloudWatch to prevent blocking -->
+    <appender name="ASYNC_CLOUDWATCH" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="CLOUDWATCH"/>
+        <queueSize>5000</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <!-- Package-specific log levels -->
+    <logger name="com.distributed.systems" level="INFO"/>
+    <logger name="software.amazon.awssdk" level="WARN"/>
+    <!-- Reduce Stanford NLP verbosity -->
+    <logger name="edu.stanford" level="WARN"/>
+    
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_CLOUDWATCH"/>
+    </root>
+</configuration>
+
+
+
+
