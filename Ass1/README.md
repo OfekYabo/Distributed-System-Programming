@@ -151,6 +151,6 @@ The system employs a multi-queue design to effectively separate concerns, ensure
     *   `s3://ds-assignment-1-ofek/worker.jar`
 3.  **Run Client**:
     ```bash
-    java -jar local-app/target/local-app-1.0-SNAPSHOT-shaded.jar input.txt output.html 10
+    java -jar local-app/target/local-app-1.0-SNAPSHOT.jar input.txt output.html 10
     ```
     *   `n=10`: Tasks per worker ratio.
