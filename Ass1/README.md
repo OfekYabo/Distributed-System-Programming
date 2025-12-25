@@ -76,36 +76,9 @@ The Manager uses a `FixedThreadPool` of 3 threads plus the main thread:
 *   `MAX_WORKER_INSTANCES`: `18`
 *   `SCALING_INTERVAL_SECONDS`: `30`
 
-### Logic
+### Worker Logic
 *   `WORKER_MAX_MESSAGES`: `1` (Process one task at a time).
 *   `WORKER_MAX_SENTENCE_LENGTH`: `20` (Skips sentences longer than 20 words during Constituency Parsing to prevent timeouts).
-*   `TEMP_DIR`: `/tmp/worker`
-
-### Worker Logic
-*   `WORKER_MAX_MESSAGES`: `1` (Process one task at a time).
-*   `WORKER_MAX_SENTENCE_LENGTH`: `20` (**Note**: This limits Constituency Parsing to sentences under 20 *words*. Increase if deeper analysis of long sentences is required, e.g., to 80).
-*   `TEMP_DIR`: `/tmp/worker`
-
-## Design Considerations
-
-### Memory Efficiency & Scalability
-The Manager is designed to handle **multiple concurrent clients** and **thousands of tasks** with minimal memory footprint:
-1.  **Stateless Job Tracking**: The `JobTracker` in the Manager does **not** store the list of tasks or their results in memory while the job is running. It only maintains lightweight `AtomicInteger` counters (Total vs. Completed).
-2.  **S3 Offloading**: Workers upload their results (and metadata) directly to S3. The Manager does not receive large text payloads. It only receives a lightweight notification message via SQS.
-3.  **On-Demand Aggregation**: Only when a job reaches 100% completion does the Manager list the result files from S3 to generate the summary. This ensures that memory usage during the processing phase remains constant (O(1)) per job, regardless of the number of tasks.
-
-### Why SQS?
-We chose AWS SQS for communication to ensure **decoupling** and **load balancing**:
-*   **Buffer & Flow Control**: SQS acts as a buffer between the fast Task Generator (Manager) and the slower Task Processors (Workers). It prevents the Manager from overwhelming workers.
-*   **Automatic Load Balancing**: Workers "pull" tasks when they are ready. Faster workers process more tasks automatically without complex logic in the Manager.
-*   **Fault Tolerance (Visibility Timeout)**: If a Worker crashes while processing a task (or if the EC2 instance is terminated), it fails to delete the message. After the `VISIBILITY_TIMEOUT_SECONDS` (1000s), SQS automatically makes the task visible again, allowing another health worker to pick it up.
-*   **Separation of Concerns**:
-    *   `manager-to-workers-tasks`: Regular work.
-    *   `worker-control-queue`: High-priority signals (e.g., Termination) that can bypass the backlog of regular tasks.
-
-### Worker Logic
-*   `WORKER_MAX_MESSAGES`: `1` (Process one task at a time).
-*   `WORKER_MAX_SENTENCE_LENGTH`: `20` (**Note**: This limits Constituency Parsing to sentences under 20 *words*. Increase if deeper analysis of long sentences is required, e.g., to 80).
 *   `TEMP_DIR`: `/tmp/worker`
 
 ## Design Considerations
@@ -145,12 +118,11 @@ The system employs a multi-queue design to effectively separate concerns, ensure
 *   **Horizontal Scaling**: The system is designed to scale horizontally. Since the Manager and Workers are decoupled via SQS, we can theoretically add thousands of Worker instances.
 *   **Bottlenecks**:
     *   **Manager**: The Manager is currently a Single Point of Failure (SPOF) and a potential bottleneck. For 1 billion clients, a single EC2 instance cannot handle the thread management and aggregation.
-    *   **Solution**: To scale to billions, we would need to shard the Manager (e.g., one Manager per region or per user group) or replace the Manager with a serverless architecture (AWS Lambda) triggered by S3 events.
+    *   **Solution**: To scale to billions, we would need to shard the Manager (e.g., one Manager per region or per user group).
 
 ### 2. Persistence & Fault Tolerance
 *   **Node Death**: If a Worker node dies (power failure, crash), the SQS **Visibility Timeout** ensures the message reappears in the queue after 1000s. Another worker will pick it up. The task is never lost.
 *   **Decoupled State**: The state is stored in SQS (tasks) and S3 (results). The Manager is mostly stateless regarding task progress (it recovers state by checking SQS/S3, though strictly speaking, our current in-memory `JobTracker` would lose counters on crash—a trade-off for simplicity).
-*   **Broken Communication**: Use of AWS SDKs with built-in retry logic ensures transient network failures are handled gracefully.
 
 ### 3. Threading Rationale
 *   **Why Threads?**: We use threads in the Manager (`LocalAppListener`, `WorkerResultsListener`) because we are **I/O bound**. Most time is spent waiting for network responses (SQS/S3). Blocking the main thread for these operations would freeze the system.
@@ -159,7 +131,7 @@ The system employs a multi-queue design to effectively separate concerns, ensure
 
 ### 4. Worker Utilization
 *   **"Working Hard?"**: Yes. The **Competing Consumers** pattern ensures that as soon as a worker finishes, it grabs the next task. No worker sits idle if there is work to do.
-*   **Load Balancing**: SQS handles this natively. We don't need complex round-robin logic in the Manager.
+*   **Load Balancing**: SQS handles this natively.
 
 ### 5. Distributed Nature
 *   **Nothing Waits**: The Local App sends a request and *polls*. The Manager sends tasks and *continues*. Workers process and *upload*. No component statically waits for another component to be "online" in a synchronized socket connection. This is a truly asynchronous distributed system.
