@@ -49,7 +49,7 @@ public class Worker {
     private final Ec2Service ec2Service;
     private final TaskProcessor taskProcessor;
     private final AtomicBoolean running;
-
+    
     // Config Values
     private final String awsRegion;
     private final String s3BucketName;
@@ -115,9 +115,6 @@ public class Worker {
                     for (Message msg : controlMessages) {
                         handleControlMessage(msg);
                     }
-                    // Loop back to check control queue again or proceed to input queue?
-                    // Ideally we check control first. If handled (terminated), we die.
-                    // If not terminated (unknown msg), we continue.
                     continue;
                 }
 
@@ -191,7 +188,6 @@ public class Worker {
 
             Future<String> future = null;
             try {
-                // Need effectively final for lambda? taskData should be fine or use locals
                 WorkerTaskMessage.TaskData finalTaskData = taskData;
                 future = taskExecutor.submit(() -> taskProcessor.processTask(finalTaskData, deadline));
 

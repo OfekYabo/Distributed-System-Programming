@@ -156,9 +156,6 @@ public class WorkerResultsListener implements Runnable {
                             String[] parts = s3Url.substring(5).split("/", 2);
                             if (parts.length == 2) {
                                 String objectKey = parts[1];
-                                // Re-use current bucket name from service or use what's in URL?
-                                // S3Service is bound to a bucket. Currently assuming same bucket.
-                                // Ideally extract bucket from URL too but we trust S3Service.
                                 presignedUrl = s3Service.generatePresignedUrl(objectKey);
                             }
                         } catch (Exception e) {
