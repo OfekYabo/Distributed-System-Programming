@@ -85,9 +85,11 @@ public class LocalApp {
         this.awsRegion = config.getString(AWS_REGION_KEY);
         this.s3BucketName = config.getString(S3_BUCKET_KEY);
         this.localAppInputQueue = config.getString(LOCAL_APP_INPUT_QUEUE_KEY);
-        // Task 1: Unique Queue - Override config value with unique name
+        
+        // generate unique job ID and output queue name
         this.jobId = UUID.randomUUID().toString();
         this.localAppOutputQueue = "local-app-output-" + this.jobId;
+
         this.waitTimeSeconds = config.getIntOptional(WAIT_TIME_KEY, 20);
         this.visibilityTimeout = config.getIntOptional(VISIBILITY_TIMEOUT_KEY, 180);
         this.s3InputPrefix = config.getOptional(S3_INPUT_PREFIX_KEY, "input");
@@ -101,8 +103,6 @@ public class LocalApp {
         this.outputFileName = outputFileName;
         this.n = n;
         this.terminate = terminate;
-
-        // Output queue already assigned uniquely above
 
         // Initialize shared services
         Ec2Client ec2Client = Ec2Client.builder().region(Region.of(awsRegion)).build();
@@ -187,8 +187,7 @@ public class LocalApp {
     private void ensureQueuesExist() {
         sqsService.createQueueIfNotExists(localAppInputQueue, visibilityTimeout, waitTimeSeconds);
         sqsService.createQueueIfNotExists(localAppOutputQueue, visibilityTimeout, waitTimeSeconds);
-        // Manager queues should be created by Manager, but we can ensure them here if
-        // we want strictness.
+        // Manager queues should be created by Manager
     }
 
     private void ensureManagerRunning() {
