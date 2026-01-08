@@ -17,6 +17,7 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.BasicConfigurator;
+import io.github.cdimascio.dotenv.Dotenv;
 
 import com.dsp.ass2.steps.AggregationStep;
 import com.dsp.ass2.steps.C1CalculationStep;
@@ -31,19 +32,60 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         System.exit(exitCode);
     }
 
+    // Extracted for Testing
+    public Configuration validateAndConfigure(String[] args) {
+        Configuration conf = getConf();
+        if (conf == null)
+            conf = new Configuration();
+
+        // Load .env if available
+        Dotenv dotenv = null;
+        try {
+            dotenv = Dotenv.load();
+        } catch (Exception e) {
+            // Ignore if .env missing
+        }
+
+        // Defaults from .env or null
+        String inputPath = (dotenv != null) ? dotenv.get("INPUT_PATH") : null;
+        String outputBasePath = (dotenv != null) ? dotenv.get("OUTPUT_PATH") : null;
+        String language = (dotenv != null) ? dotenv.get("LANGUAGE") : "eng";
+
+        // Override with CLI args
+        if (args.length >= 1)
+            inputPath = args[0];
+        if (args.length >= 2)
+            outputBasePath = args[1];
+        if (args.length >= 3)
+            language = args[2];
+
+        // Validation
+        if (inputPath == null || outputBasePath == null) {
+            throw new IllegalArgumentException("Missing mandatory parameters: Input Path or Output Path.");
+        }
+
+        conf.set("inputPath", inputPath);
+        conf.set("outputBasePath", outputBasePath);
+        conf.set("language", language);
+
+        return conf;
+    }
+
     @Override
     public int run(String[] args) throws Exception {
-        Configuration conf = getConf();
-
-        if (args.length < 2) {
-            System.err.println("Usage: Main <input path> <output base path> [language]");
+        Configuration conf;
+        try {
+            conf = validateAndConfigure(args);
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
             return -1;
         }
 
-        String inputPath = args[0];
-        String outputBasePath = args[1];
-        String language = (args.length > 2) ? args[2] : "eng";
-        conf.set("language", language);
+        String inputPath = conf.get("inputPath");
+        String outputBasePath = conf.get("outputBasePath");
+
+        // Push validated conf back to this.conf (Tool interface stuff)
+        setConf(conf);
 
         // -------------------------------------------------------------------------
         // Step 1: Aggregation
@@ -57,7 +99,7 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step1.setMapOutputValueClass(LongWritable.class);
         step1.setOutputKeyClass(Text.class);
         step1.setOutputValueClass(LongWritable.class);
-        step1.setInputFormatClass(TextInputFormat.class); // Or SequenceFileInputFormat if raw input is such
+        step1.setInputFormatClass(TextInputFormat.class);
         step1.setOutputFormatClass(SequenceFileOutputFormat.class);
 
         FileInputFormat.addInputPath(step1, new Path(inputPath));
@@ -68,16 +110,15 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
             return 1;
         }
 
-        // Load Global Counters (N) from Step 1
+        // Load Global Counters
         Counters counters = step1.getCounters();
         CounterGroup decadeCounters = counters.getGroup("Decade_N");
         for (Counter counter : decadeCounters) {
             conf.setLong("N_" + counter.getName().replace("N_", ""), counter.getValue());
-            System.out.println("Loaded N for " + counter.getName() + ": " + counter.getValue());
         }
 
         // -------------------------------------------------------------------------
-        // Step 2: C1 Calculation (Order Inversion)
+        // Step 2: C1 Calculation
         // -------------------------------------------------------------------------
         Job step2 = Job.getInstance(conf, "Step 2: C1 Calculation");
         step2.setJarByClass(Main.class);
@@ -87,10 +128,10 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step2.setGroupingComparatorClass(C1CalculationStep.C1GroupingComparator.class);
         step2.setReducerClass(C1CalculationStep.C1Reducer.class);
 
-        step2.setMapOutputKeyClass(Text.class); // Decade, w1, w2 info
-        step2.setMapOutputValueClass(Text.class); // Tagged value
+        step2.setMapOutputKeyClass(Text.class);
+        step2.setMapOutputValueClass(Text.class);
         step2.setOutputKeyClass(Text.class);
-        step2.setOutputValueClass(Text.class); // (Decade, w1, w2) -> (c12, c1)
+        step2.setOutputValueClass(Text.class);
 
         step2.setInputFormatClass(SequenceFileInputFormat.class);
         step2.setOutputFormatClass(SequenceFileOutputFormat.class);
@@ -104,7 +145,7 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         }
 
         // -------------------------------------------------------------------------
-        // Step 3: C2 Calculation & LLR (Order Inversion)
+        // Step 3: C2 Calculation & LLR
         // -------------------------------------------------------------------------
         Job step3 = Job.getInstance(conf, "Step 3: C2 Calculation & LLR");
         step3.setJarByClass(Main.class);
@@ -116,8 +157,8 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
 
         step3.setMapOutputKeyClass(Text.class);
         step3.setMapOutputValueClass(Text.class);
-        step3.setOutputKeyClass(Text.class); // (Decade, LLR)
-        step3.setOutputValueClass(Text.class); // (w1, w2)
+        step3.setOutputKeyClass(Text.class);
+        step3.setOutputValueClass(Text.class);
 
         step3.setInputFormatClass(SequenceFileInputFormat.class);
         step3.setOutputFormatClass(SequenceFileOutputFormat.class);
@@ -131,7 +172,7 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         }
 
         // -------------------------------------------------------------------------
-        // Step 4: Sorting & Output (Top 100)
+        // Step 4: Sorting & Output
         // -------------------------------------------------------------------------
         Job step4 = Job.getInstance(conf, "Step 4: Sorting");
         step4.setJarByClass(Main.class);
@@ -147,7 +188,7 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step4.setOutputValueClass(Text.class);
 
         step4.setInputFormatClass(SequenceFileInputFormat.class);
-        step4.setOutputFormatClass(TextOutputFormat.class); // Human readable final output
+        step4.setOutputFormatClass(TextOutputFormat.class);
 
         FileInputFormat.addInputPath(step4, new Path(outputBasePath + "/step3"));
         FileOutputFormat.setOutputPath(step4, new Path(outputBasePath + "/final_output"));
