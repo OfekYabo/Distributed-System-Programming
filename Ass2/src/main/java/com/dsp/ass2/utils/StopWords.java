@@ -12,8 +12,21 @@ public class StopWords {
 
     private Set<String> stopWords = new HashSet<>();
 
-    public StopWords(Configuration conf) {
-        String stopWordsPath = conf.get("stopwords.path", "eng-stopwords.txt"); // Default fallback
+    public StopWords(Configuration conf, String language, String strategy) {
+        String fileName = "eng-stopwords.txt"; // Default
+
+        if (language.equalsIgnoreCase("heb")) {
+            fileName = "heb-stopwords.txt";
+        }
+
+        // If extended strategy? Maybe different file or append.
+        if (strategy.equalsIgnoreCase("extended")) {
+            // Example logic: "eng-stopwords-extended.txt"
+            // For now, let's assume we treat it same or allow a specific override key
+        }
+
+        // Allow overriding via explicit path config if needed
+        String stopWordsPath = conf.get("stopwords.path", fileName);
         loadStopWords(conf, stopWordsPath);
     }
 

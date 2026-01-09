@@ -32,32 +32,53 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         System.exit(exitCode);
     }
 
-    // Extracted for Testing
+    // Overload for production usage (loads .env automatically)
     public Configuration validateAndConfigure(String[] args) {
-        Configuration conf = getConf();
-        if (conf == null)
-            conf = new Configuration();
-
-        // Load .env if available
         Dotenv dotenv = null;
         try {
             dotenv = Dotenv.load();
         } catch (Exception e) {
             // Ignore if .env missing
         }
+        return validateAndConfigure(args, dotenv);
+    }
+
+    // Extracted for Testing (accepts injected Dotenv)
+    public Configuration validateAndConfigure(String[] args, Dotenv dotenv) {
+        Configuration conf = getConf();
+        if (conf == null)
+            conf = new Configuration();
 
         // Defaults from .env or null
+        // Basic
         String inputPath = (dotenv != null) ? dotenv.get("INPUT_PATH") : null;
         String outputBasePath = (dotenv != null) ? dotenv.get("OUTPUT_PATH") : null;
         String language = (dotenv != null) ? dotenv.get("LANGUAGE") : "eng";
+        if (language == null)
+            language = "eng";
+
+        // Extended
+        String stopWordsStrategy = (dotenv != null) ? dotenv.get("STOP_WORDS_STRATEGY") : "regular";
+        if (stopWordsStrategy == null)
+            stopWordsStrategy = "regular";
+        boolean normalize = (dotenv != null) && Boolean.parseBoolean(dotenv.get("NORMALIZE"));
+        String runMode = (dotenv != null) ? dotenv.get("RUN_MODE") : "cloud"; // local, cloud
+        String awsProfile = (dotenv != null) ? dotenv.get("AWS_PROFILE") : null;
 
         // Override with CLI args
+        // Usage: <input> <output> [lang] [strategy] [normalize] [runMode]
         if (args.length >= 1)
             inputPath = args[0];
         if (args.length >= 2)
             outputBasePath = args[1];
         if (args.length >= 3)
             language = args[2];
+        if (args.length >= 4)
+            stopWordsStrategy = args[3];
+        if (args.length >= 5)
+            normalize = parseBooleanStrict(args[4]);
+        if (args.length >= 6)
+            runMode = args[5];
 
         // Validation
         if (inputPath == null || outputBasePath == null) {
@@ -67,8 +88,33 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         conf.set("inputPath", inputPath);
         conf.set("outputBasePath", outputBasePath);
         conf.set("language", language);
+        conf.set("stopWordsStrategy", stopWordsStrategy);
+        conf.setBoolean("normalize", normalize);
+
+        // Handle AWS Profile
+        if (awsProfile != null && !awsProfile.isEmpty()) {
+            // Set for AWS SDK
+            System.setProperty("aws.profile", awsProfile);
+            // Set for Hadoop S3A
+            conf.set("fs.s3a.aws.credentials.provider", "com.amazonaws.auth.profile.ProfileCredentialsProvider");
+        }
+
+        if ("local".equalsIgnoreCase(runMode)) {
+            conf.set("mapreduce.framework.name", "local");
+        }
 
         return conf;
+    }
+
+    // Strict Boolean Parser
+    private boolean parseBooleanStrict(String val) {
+        if (val == null)
+            return false;
+        if (val.equalsIgnoreCase("true"))
+            return true;
+        if (val.equalsIgnoreCase("false"))
+            return false;
+        throw new IllegalArgumentException("Invalid boolean value: " + val + ". Must be 'true' or 'false'.");
     }
 
     @Override
@@ -84,7 +130,6 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         String inputPath = conf.get("inputPath");
         String outputBasePath = conf.get("outputBasePath");
 
-        // Push validated conf back to this.conf (Tool interface stuff)
         setConf(conf);
 
         // -------------------------------------------------------------------------

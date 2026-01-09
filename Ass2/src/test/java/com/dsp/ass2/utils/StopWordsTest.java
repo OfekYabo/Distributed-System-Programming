@@ -40,18 +40,10 @@ public class StopWordsTest {
     @Test
     public void testLoadStopWords_Local() {
         Configuration conf = new Configuration();
-        // Use local file system explicitly in URI or just path if code handles it.
-        // Our code uses new Path(str) and FileSystem.get(conf).
-        // To force local fs, we might need "file:///" prefix depending on Hadoop
-        // defaults.
-        // But FileSystem.get(conf) defaults to LocalFileSystem if fs.defaultFS is not
-        // set.
 
         conf.set("stopwords.path", stopWordsPath); // Assumes local path works
-        // Note: StopWords class uses FileSystem.get(conf). Tests run in local mode
-        // usually so this should work.
 
-        StopWords sw = new StopWords(conf);
+        StopWords sw = new StopWords(conf, "eng", "regular");
 
         assertTrue(sw.isStopWord("is"));
         assertTrue(sw.isStopWord("THE")); // Case sensitivity check
@@ -63,12 +55,10 @@ public class StopWordsTest {
 
     @Test
     public void testStopWords_Fallback() {
-        // If file doesn't exist, it prints error but doesn't crash (based on
-        // implementation).
         Configuration conf = new Configuration();
         conf.set("stopwords.path", "non/existent/path.txt");
 
-        StopWords sw = new StopWords(conf);
+        StopWords sw = new StopWords(conf, "eng", "regular");
 
         assertFalse(sw.isStopWord("is")); // Empty set
     }

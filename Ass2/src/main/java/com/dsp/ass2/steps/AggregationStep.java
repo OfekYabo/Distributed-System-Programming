@@ -1,6 +1,7 @@
 package com.dsp.ass2.steps;
 
 import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -14,10 +15,15 @@ public class AggregationStep {
         private StopWords stopWords;
         private Text outKey = new Text();
         private LongWritable outValue = new LongWritable();
+        private boolean normalize;
 
         @Override
         protected void setup(Context context) {
-            this.stopWords = new StopWords(context.getConfiguration());
+            Configuration conf = context.getConfiguration();
+            String language = conf.get("language", "eng");
+            String strategy = conf.get("stopWordsStrategy", "regular");
+            this.stopWords = new StopWords(conf, language, strategy);
+            this.normalize = conf.getBoolean("normalize", false);
         }
 
         @Override
@@ -35,8 +41,14 @@ public class AggregationStep {
             String yearStr = parts[2];
             String countStr = parts[3];
 
+            // Text Normalization (if enabled)
+            if (normalize) {
+                w1 = w1.toLowerCase().replaceAll("[^a-zA-Z]", "");
+                w2 = w2.toLowerCase().replaceAll("[^a-zA-Z]", "");
+            }
+
             // Filter Stop Words
-            if (stopWords.isStopWord(w1) || stopWords.isStopWord(w2)) {
+            if (w1.isEmpty() || w2.isEmpty() || stopWords.isStopWord(w1) || stopWords.isStopWord(w2)) {
                 return;
             }
 
