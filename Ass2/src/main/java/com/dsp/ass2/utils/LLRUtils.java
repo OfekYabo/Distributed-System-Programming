@@ -34,25 +34,6 @@ public class LLRUtils {
         if (k11 < 0 || k12 < 0 || k21 < 0 || k22 < 0)
             return 0.0;
 
-        double rowSum1 = k11 + k12;
-        double rowSum2 = k21 + k22;
-        double colSum1 = k11 + k21;
-        double colSum2 = k12 + k22;
-        double grandTotal = rowSum1 + rowSum2; // Should be N
-
-        double E11 = (rowSum1 * colSum1) / grandTotal;
-        double E12 = (rowSum1 * colSum2) / grandTotal;
-        double E21 = (rowSum2 * colSum1) / grandTotal;
-        double E22 = (rowSum2 * colSum2) / grandTotal;
-
-        // G-Test (2 * sum(O * ln(O/E))) ??
-        // Assignment might specify different variation.
-        // Usually: LLR = 2 * (c12(log(c12) - log(E11)) + ...)
-
-        // Let's implement simplified entropy formula if preferred, or the 2*(L(H1) -
-        // L(H0))
-        // L(H0) = logL(c2/N, c12, c1) + logL(c2/N, c2-c12, N-c1) ??
-
         // Common Implementation for Collocations:
         double logL = calcLogL(k11, k12, k21, k22);
 
