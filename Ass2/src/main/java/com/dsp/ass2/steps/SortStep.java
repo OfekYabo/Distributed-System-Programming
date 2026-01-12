@@ -10,6 +10,12 @@ import org.apache.hadoop.mapreduce.Reducer;
 import com.dsp.ass2.models.DecadeLLR;
 import com.dsp.ass2.models.WordPair;
 
+/**
+ * Step 4: Sort & Top 100
+ * 
+ * Input: Key=(Decade, LLR), Value=(w1, w2)
+ * Output: Top 100 collocations per decade sorted by LLR descending
+ */
 public class SortStep {
 
     public static class SortMapper extends Mapper<DecadeLLR, WordPair, DecadeLLR, WordPair> {
@@ -22,7 +28,6 @@ public class SortStep {
     public static class SortPartitioner extends Partitioner<DecadeLLR, WordPair> {
         @Override
         public int getPartition(DecadeLLR key, WordPair value, int numPartitions) {
-            // Partition by Decade only. All 1990 go to one reducer.
             return Math.abs(Integer.hashCode(key.getDecade())) % numPartitions;
         }
     }
@@ -47,26 +52,19 @@ public class SortStep {
         private int counter = 0;
 
         @Override
-        public void reduce(DecadeLLR key, Iterable<WordPair> values, Context context) throws IOException, InterruptedException {
-            // Since we group by Decade, all Pairs for 1990 come here, sorted by LLR DESC.
-            // reduce() is called ONCE per Group (Decade).
+        public void reduce(DecadeLLR key, Iterable<WordPair> values, Context context)
+                throws IOException, InterruptedException {
 
             counter = 0;
             for (WordPair val : values) {
-                // Check if 100 limit reached
                 if (counter < 100) {
-                    // Logic: Key has `DecadeLLR`. Value has `WordPair`.
-                    // We want output: `Decade decade w1 w2 LLR`?
-                    // Assignment output format: "Decade w1 w2 LLR"?
-                    
+                    // Output format: "Decade decade w1 w2 LLR"
                     Text outKey = new Text("Decade " + key.getDecade() + " " + val.getW1() + " " + val.getW2());
                     Text outVal = new Text(String.valueOf(key.getLlr()));
 
                     context.write(outKey, outVal);
                     counter++;
                 } else {
-                    // Start of decade finished?
-                    // No, reduce() handles ONE group (Decade). So if we hit 100, we are done for this decade.
                     break;
                 }
             }
