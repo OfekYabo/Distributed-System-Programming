@@ -5,16 +5,16 @@ import java.io.DataOutput;
 import java.io.IOException;
 import org.apache.hadoop.io.Writable;
 
-public class C12Value implements Writable {
+public class C12C1Value implements Writable {
     private long c12;
     private long c1;
 
-    public C12Value() {
+    public C12C1Value() {
         this.c12 = 0;
         this.c1 = 0;
     }
 
-    public C12Value(long c12, long c1) {
+    public C12C1Value(long c12, long c1) {
         this.c12 = c12;
         this.c1 = c1;
     }
@@ -49,4 +49,3 @@ public class C12Value implements Writable {
         return c12 + "\t" + c1;
     }
 }
-

@@ -7,14 +7,14 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import com.dsp.ass2.utils.StopWords;
-import com.dsp.ass2.models.WordPair;
+import com.dsp.ass2.models.DecadeWordWord;
 
 public class AggregationStep {
 
-    public static class AggregationMapper extends Mapper<LongWritable, Text, WordPair, LongWritable> {
+    public static class AggregationMapper extends Mapper<LongWritable, Text, DecadeWordWord, LongWritable> {
 
         private StopWords stopWords;
-        private WordPair outKey = new WordPair();
+        private DecadeWordWord outKey = new DecadeWordWord();
         private LongWritable outValue = new LongWritable();
 
         @Override
@@ -59,13 +59,13 @@ public class AggregationStep {
             // Extract Decade
             try {
                 int year = Integer.parseInt(yearStr);
-                if (year < 1900 || year > 2010) {
+                if (year < 1900 || year > 2030) {
                     return; // Ignore years outside reasonable range for Google Ngrams
                 }
                 int decade = (year / 10) * 10;
                 long count = Long.parseLong(countStr);
 
-                // Emit Key: WordPair(decade, w1, w2)
+                // Emit Key: DecadeWordWord(decade, w1, w2)
                 outKey.set(decade, w1, w2);
                 outValue.set(count);
                 context.write(outKey, outValue);
@@ -76,11 +76,12 @@ public class AggregationStep {
         }
     }
 
-    public static class AggregationCombiner extends Reducer<WordPair, LongWritable, WordPair, LongWritable> {
+    public static class AggregationCombiner
+            extends Reducer<DecadeWordWord, LongWritable, DecadeWordWord, LongWritable> {
         private LongWritable result = new LongWritable();
 
         @Override
-        public void reduce(WordPair key, Iterable<LongWritable> values, Context context)
+        public void reduce(DecadeWordWord key, Iterable<LongWritable> values, Context context)
                 throws IOException, InterruptedException {
             long sum = 0;
             for (LongWritable val : values) {
@@ -91,11 +92,11 @@ public class AggregationStep {
         }
     }
 
-    public static class AggregationReducer extends Reducer<WordPair, LongWritable, WordPair, LongWritable> {
+    public static class AggregationReducer extends Reducer<DecadeWordWord, LongWritable, DecadeWordWord, LongWritable> {
         private LongWritable result = new LongWritable();
 
         @Override
-        public void reduce(WordPair key, Iterable<LongWritable> values, Context context)
+        public void reduce(DecadeWordWord key, Iterable<LongWritable> values, Context context)
                 throws IOException, InterruptedException {
             long sum = 0;
             for (LongWritable val : values) {
