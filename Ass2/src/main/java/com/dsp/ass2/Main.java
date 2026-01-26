@@ -60,6 +60,20 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         System.err.println("Output Base Path: " + outputBasePath);
 
         Configuration conf = getConf();
+
+        // Load .env file and set AWS Profile if specified
+        try {
+            io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.configure().ignoreIfMissing()
+                    .load();
+            String awsProfile = dotenv.get("AWS_PROFILE");
+            if (awsProfile != null && !awsProfile.isEmpty()) {
+                System.setProperty("aws.profile", awsProfile);
+                System.err.println("Loaded AWS_PROFILE from .env: " + awsProfile);
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to load .env file: " + e.getMessage());
+        }
+
         conf.set("mapreduce.job.counters.max", "1000");
 
         // Step 1: Aggregation
@@ -77,7 +91,8 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         FileInputFormat.addInputPath(step1, new Path(inputPath));
         FileOutputFormat.setOutputPath(step1, new Path(outputBasePath + "/step1"));
 
-        if (!step1.waitForCompletion(true)) return 1;
+        if (!step1.waitForCompletion(true))
+            return 1;
 
         // Pass Decade_N counters to subsequent jobs
         Counters counters = step1.getCounters();
@@ -102,7 +117,8 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         FileInputFormat.addInputPath(step2, new Path(outputBasePath + "/step1"));
         FileOutputFormat.setOutputPath(step2, new Path(outputBasePath + "/step2"));
 
-        if (!step2.waitForCompletion(true)) return 1;
+        if (!step2.waitForCompletion(true))
+            return 1;
 
         // Step 3: C2 Calculation & LLR
         Job step3 = Job.getInstance(conf, "Step 3: C2 Calculation & LLR");
@@ -120,7 +136,8 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         FileInputFormat.addInputPath(step3, new Path(outputBasePath + "/step2"));
         FileOutputFormat.setOutputPath(step3, new Path(outputBasePath + "/step3"));
 
-        if (!step3.waitForCompletion(true)) return 1;
+        if (!step3.waitForCompletion(true))
+            return 1;
 
         // Step 4: Sorting & Output
         Job step4 = Job.getInstance(conf, "Step 4: Sorting");
