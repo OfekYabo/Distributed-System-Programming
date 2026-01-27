@@ -6,16 +6,16 @@ import java.io.IOException;
 import java.util.Objects;
 import org.apache.hadoop.io.WritableComparable;
 
-public class DecadeLLR implements WritableComparable<DecadeLLR> {
+public class DecadeLLRKey implements WritableComparable<DecadeLLRKey> {
     private int decade;
     private double llr;
 
-    public DecadeLLR() {
+    public DecadeLLRKey() {
         this.decade = 0;
         this.llr = 0.0;
     }
 
-    public DecadeLLR(int decade, double llr) {
+    public DecadeLLRKey(int decade, double llr) {
         this.decade = decade;
         this.llr = llr;
     }
@@ -46,18 +46,21 @@ public class DecadeLLR implements WritableComparable<DecadeLLR> {
     }
 
     @Override
-    public int compareTo(DecadeLLR other) {
+    public int compareTo(DecadeLLRKey other) {
         int cmp = Integer.compare(this.decade, other.decade);
-        if (cmp != 0) return cmp;
+        if (cmp != 0)
+            return cmp;
         // DESC sort for LLR
         return Double.compare(other.llr, this.llr);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        DecadeLLR decadeLLR = (DecadeLLR) o;
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        DecadeLLRKey decadeLLR = (DecadeLLRKey) o;
         return decade == decadeLLR.decade && Double.compare(decadeLLR.llr, llr) == 0;
     }
 
@@ -71,4 +74,3 @@ public class DecadeLLR implements WritableComparable<DecadeLLR> {
         return decade + "\t" + llr;
     }
 }
-

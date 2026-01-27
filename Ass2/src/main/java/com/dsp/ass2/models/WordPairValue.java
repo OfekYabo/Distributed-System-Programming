@@ -10,16 +10,16 @@ import org.apache.hadoop.io.Writable;
  * Represents a pair of words (w1, w2) without decade information.
  * Used as a value type in the final step to hold the word pair for output.
  */
-public class WordPair implements Writable {
+public class WordPairValue implements Writable {
     private String w1;
     private String w2;
 
-    public WordPair() {
+    public WordPairValue() {
         this.w1 = "";
         this.w2 = "";
     }
 
-    public WordPair(String w1, String w2) {
+    public WordPairValue(String w1, String w2) {
         this.w1 = w1;
         this.w2 = w2;
     }
@@ -63,7 +63,7 @@ public class WordPair implements Writable {
             return true;
         if (o == null || getClass() != o.getClass())
             return false;
-        WordPair wordPair = (WordPair) o;
+        WordPairValue wordPair = (WordPairValue) o;
         return Objects.equals(w1, wordPair.w1) &&
                 Objects.equals(w2, wordPair.w2);
     }

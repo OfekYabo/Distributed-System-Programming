@@ -5,19 +5,19 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
 import com.dsp.ass2.utils.LLRUtils;
-import com.dsp.ass2.models.DecadeWordWord;
+import com.dsp.ass2.models.DecadeWordWordKey;
 import com.dsp.ass2.models.C12C1Value;
-import com.dsp.ass2.models.DecadeLLR;
-import com.dsp.ass2.models.WordPair;
+import com.dsp.ass2.models.DecadeLLRKey;
+import com.dsp.ass2.models.WordPairValue;
 
 public class C2CalculationStep {
 
-    public static class C2Mapper extends Mapper<DecadeWordWord, C12C1Value, DecadeWordWord, C12C1Value> {
-        private DecadeWordWord outKey = new DecadeWordWord();
+    public static class C2Mapper extends Mapper<DecadeWordWordKey, C12C1Value, DecadeWordWordKey, C12C1Value> {
+        private DecadeWordWordKey outKey = new DecadeWordWordKey();
         // outValue removed - reusing input value
 
         @Override
-        public void map(DecadeWordWord key, C12C1Value value, Context context)
+        public void map(DecadeWordWordKey key, C12C1Value value, Context context)
                 throws IOException, InterruptedException {
 
             // Optimization: Set common fields only once
@@ -35,25 +35,25 @@ public class C2CalculationStep {
         }
     }
 
-    public static class C2Partitioner extends Partitioner<DecadeWordWord, C12C1Value> {
+    public static class C2Partitioner extends Partitioner<DecadeWordWordKey, C12C1Value> {
         @Override
-        public int getPartition(DecadeWordWord key, C12C1Value value, int numPartitions) {
+        public int getPartition(DecadeWordWordKey key, C12C1Value value, int numPartitions) {
             // Determine partition by "Decade + w2" (which is in key.getW1() now)
             int hash = (key.getDecade() + "\t" + key.getW1()).hashCode();
             return Math.abs(hash) % numPartitions;
         }
     }
 
-    public static class C2Reducer extends Reducer<DecadeWordWord, C12C1Value, DecadeLLR, WordPair> {
-        private DecadeLLR outKey = new DecadeLLR();
-        private WordPair outValue = new WordPair();
+    public static class C2Reducer extends Reducer<DecadeWordWordKey, C12C1Value, DecadeLLRKey, WordPairValue> {
+        private DecadeLLRKey outKey = new DecadeLLRKey();
+        private WordPairValue outValue = new WordPairValue();
         private long currentC2 = 0;
         private int lastDecade = -1;
         private String lastW2 = "";
         private long currentN = -1;
 
         @Override
-        public void reduce(DecadeWordWord key, Iterable<C12C1Value> values, Context context)
+        public void reduce(DecadeWordWordKey key, Iterable<C12C1Value> values, Context context)
                 throws IOException, InterruptedException {
 
             // Check for group change

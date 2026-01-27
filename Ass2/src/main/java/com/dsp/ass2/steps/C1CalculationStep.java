@@ -5,17 +5,17 @@ import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-import com.dsp.ass2.models.DecadeWordWord;
+import com.dsp.ass2.models.DecadeWordWordKey;
 import com.dsp.ass2.models.C12C1Value;
 
 public class C1CalculationStep {
 
     public static class C1Mapper
-            extends Mapper<DecadeWordWord, LongWritable, DecadeWordWord, LongWritable> {
-        private DecadeWordWord outKey = new DecadeWordWord();
+            extends Mapper<DecadeWordWordKey, LongWritable, DecadeWordWordKey, LongWritable> {
+        private DecadeWordWordKey outKey = new DecadeWordWordKey();
 
         @Override
-        public void map(DecadeWordWord key, LongWritable value, Context context)
+        public void map(DecadeWordWordKey key, LongWritable value, Context context)
                 throws IOException, InterruptedException {
 
             // Emit 1: Key for C1 aggregation (Decade, w1, *)
@@ -27,9 +27,9 @@ public class C1CalculationStep {
         }
     }
 
-    public static class C1Partitioner extends Partitioner<DecadeWordWord, LongWritable> {
+    public static class C1Partitioner extends Partitioner<DecadeWordWordKey, LongWritable> {
         @Override
-        public int getPartition(DecadeWordWord key, LongWritable value, int numPartitions) {
+        public int getPartition(DecadeWordWordKey key, LongWritable value, int numPartitions) {
             // Determine partition by "Decade + w1".
             // Crucial: All (w1,*) and (w1, word) go to SAME partition.
             // Using "\t" separator as in toString() for consistent hashing
@@ -38,14 +38,14 @@ public class C1CalculationStep {
         }
     }
 
-    public static class C1Reducer extends Reducer<DecadeWordWord, LongWritable, DecadeWordWord, C12C1Value> {
+    public static class C1Reducer extends Reducer<DecadeWordWordKey, LongWritable, DecadeWordWordKey, C12C1Value> {
         private C12C1Value outValue = new C12C1Value();
         private long currentC1 = 0;
         private int lastDecade = -1;
         private String lastW1 = "";
 
         @Override
-        public void reduce(DecadeWordWord key, Iterable<LongWritable> values, Context context)
+        public void reduce(DecadeWordWordKey key, Iterable<LongWritable> values, Context context)
                 throws IOException, InterruptedException {
 
             // Safety Check: If we switched groupings (e.g. from "high" to "higher"), reset

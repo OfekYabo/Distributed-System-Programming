@@ -20,10 +20,10 @@ import com.dsp.ass2.steps.AggregationStep;
 import com.dsp.ass2.steps.C1CalculationStep;
 import com.dsp.ass2.steps.C2CalculationStep;
 import com.dsp.ass2.steps.SortStep;
-import com.dsp.ass2.models.DecadeWordWord;
-import com.dsp.ass2.models.WordPair;
+import com.dsp.ass2.models.DecadeWordWordKey;
+import com.dsp.ass2.models.WordPairValue;
 import com.dsp.ass2.models.C12C1Value;
-import com.dsp.ass2.models.DecadeLLR;
+import com.dsp.ass2.models.DecadeLLRKey;
 
 public class Main extends org.apache.hadoop.conf.Configured implements Tool {
 
@@ -101,9 +101,9 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step1.setMapperClass(AggregationStep.AggregationMapper.class);
         step1.setCombinerClass(AggregationStep.AggregationCombiner.class);
         step1.setReducerClass(AggregationStep.AggregationReducer.class);
-        step1.setMapOutputKeyClass(DecadeWordWord.class);
+        step1.setMapOutputKeyClass(DecadeWordWordKey.class);
         step1.setMapOutputValueClass(LongWritable.class);
-        step1.setOutputKeyClass(DecadeWordWord.class);
+        step1.setOutputKeyClass(DecadeWordWordKey.class);
         step1.setOutputValueClass(LongWritable.class);
 
         // ALWAYS use SequenceFileInputFormat now, for both local (via generated seq
@@ -123,9 +123,9 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step2.setMapperClass(C1CalculationStep.C1Mapper.class);
         step2.setPartitionerClass(C1CalculationStep.C1Partitioner.class);
         step2.setReducerClass(C1CalculationStep.C1Reducer.class);
-        step2.setMapOutputKeyClass(DecadeWordWord.class);
+        step2.setMapOutputKeyClass(DecadeWordWordKey.class);
         step2.setMapOutputValueClass(LongWritable.class);
-        step2.setOutputKeyClass(DecadeWordWord.class);
+        step2.setOutputKeyClass(DecadeWordWordKey.class);
         step2.setOutputValueClass(C12C1Value.class);
         step2.setInputFormatClass(SequenceFileInputFormat.class);
         step2.setOutputFormatClass(SequenceFileOutputFormat.class);
@@ -148,10 +148,10 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step3.setMapperClass(C2CalculationStep.C2Mapper.class);
         step3.setPartitionerClass(C2CalculationStep.C2Partitioner.class);
         step3.setReducerClass(C2CalculationStep.C2Reducer.class);
-        step3.setMapOutputKeyClass(DecadeWordWord.class);
+        step3.setMapOutputKeyClass(DecadeWordWordKey.class);
         step3.setMapOutputValueClass(C12C1Value.class);
-        step3.setOutputKeyClass(DecadeLLR.class);
-        step3.setOutputValueClass(WordPair.class);
+        step3.setOutputKeyClass(DecadeLLRKey.class);
+        step3.setOutputValueClass(WordPairValue.class);
         step3.setInputFormatClass(SequenceFileInputFormat.class);
         step3.setOutputFormatClass(SequenceFileOutputFormat.class);
         FileInputFormat.addInputPath(step3, new Path(outputBasePath + "/step2"));
@@ -167,8 +167,8 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step4.setPartitionerClass(SortStep.SortPartitioner.class);
         step4.setGroupingComparatorClass(SortStep.SortGroupingComparator.class);
         step4.setReducerClass(SortStep.SortReducer.class);
-        step4.setMapOutputKeyClass(DecadeLLR.class);
-        step4.setMapOutputValueClass(WordPair.class);
+        step4.setMapOutputKeyClass(DecadeLLRKey.class);
+        step4.setMapOutputValueClass(WordPairValue.class);
         step4.setOutputKeyClass(Text.class);
         step4.setOutputValueClass(Text.class);
         step4.setInputFormatClass(SequenceFileInputFormat.class);

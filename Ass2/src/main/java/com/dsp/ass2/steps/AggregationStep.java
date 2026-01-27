@@ -7,14 +7,14 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import com.dsp.ass2.utils.StopWords;
-import com.dsp.ass2.models.DecadeWordWord;
+import com.dsp.ass2.models.DecadeWordWordKey;
 
 public class AggregationStep {
 
-    public static class AggregationMapper extends Mapper<LongWritable, Text, DecadeWordWord, LongWritable> {
+    public static class AggregationMapper extends Mapper<LongWritable, Text, DecadeWordWordKey, LongWritable> {
 
         private StopWords stopWords;
-        private DecadeWordWord outKey = new DecadeWordWord();
+        private DecadeWordWordKey outKey = new DecadeWordWordKey();
         private LongWritable outValue = new LongWritable();
         private int startDecade = -1;
         private int endDecade = -1;
@@ -136,11 +136,11 @@ public class AggregationStep {
     }
 
     public static class AggregationCombiner
-            extends Reducer<DecadeWordWord, LongWritable, DecadeWordWord, LongWritable> {
+            extends Reducer<DecadeWordWordKey, LongWritable, DecadeWordWordKey, LongWritable> {
         private LongWritable result = new LongWritable();
 
         @Override
-        public void reduce(DecadeWordWord key, Iterable<LongWritable> values, Context context)
+        public void reduce(DecadeWordWordKey key, Iterable<LongWritable> values, Context context)
                 throws IOException, InterruptedException {
             long sum = 0;
             for (LongWritable val : values) {
@@ -151,11 +151,12 @@ public class AggregationStep {
         }
     }
 
-    public static class AggregationReducer extends Reducer<DecadeWordWord, LongWritable, DecadeWordWord, LongWritable> {
+    public static class AggregationReducer
+            extends Reducer<DecadeWordWordKey, LongWritable, DecadeWordWordKey, LongWritable> {
         private LongWritable result = new LongWritable();
 
         @Override
-        public void reduce(DecadeWordWord key, Iterable<LongWritable> values, Context context)
+        public void reduce(DecadeWordWordKey key, Iterable<LongWritable> values, Context context)
                 throws IOException, InterruptedException {
             long sum = 0;
             for (LongWritable val : values) {

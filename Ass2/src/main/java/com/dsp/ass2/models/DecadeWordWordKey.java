@@ -6,18 +6,18 @@ import java.io.IOException;
 import java.util.Objects;
 import org.apache.hadoop.io.WritableComparable;
 
-public class DecadeWordWord implements WritableComparable<DecadeWordWord> {
+public class DecadeWordWordKey implements WritableComparable<DecadeWordWordKey> {
     private int decade;
     private String w1;
     private String w2;
 
-    public DecadeWordWord() {
+    public DecadeWordWordKey() {
         this.decade = 0;
         this.w1 = "";
         this.w2 = "";
     }
 
-    public DecadeWordWord(int decade, String w1, String w2) {
+    public DecadeWordWordKey(int decade, String w1, String w2) {
         this.decade = decade;
         this.w1 = w1;
         this.w2 = w2;
@@ -68,7 +68,7 @@ public class DecadeWordWord implements WritableComparable<DecadeWordWord> {
     }
 
     @Override
-    public int compareTo(DecadeWordWord other) {
+    public int compareTo(DecadeWordWordKey other) {
         int cmp = Integer.compare(this.decade, other.decade);
         if (cmp != 0)
             return cmp;
@@ -91,7 +91,7 @@ public class DecadeWordWord implements WritableComparable<DecadeWordWord> {
             return true;
         if (o == null || getClass() != o.getClass())
             return false;
-        DecadeWordWord other = (DecadeWordWord) o;
+        DecadeWordWordKey other = (DecadeWordWordKey) o;
         return decade == other.decade &&
                 Objects.equals(w1, other.w1) &&
                 Objects.equals(w2, other.w2);
