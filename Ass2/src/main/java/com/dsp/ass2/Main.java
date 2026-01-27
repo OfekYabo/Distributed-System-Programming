@@ -10,7 +10,6 @@ import org.apache.hadoop.mapreduce.CounterGroup;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
-import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
@@ -62,18 +61,38 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
 
         Configuration conf = getConf();
 
-        // Load .env file and set AWS Profile if specified
+        // Load .env file and set properties
         try {
             io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.configure().ignoreIfMissing()
                     .load();
+
+            // AWS Profile
             String awsProfile = dotenv.get("AWS_PROFILE");
             if (awsProfile != null && !awsProfile.isEmpty()) {
                 System.setProperty("aws.profile", awsProfile);
                 System.err.println("Loaded AWS_PROFILE from .env: " + awsProfile);
             }
+
+            // Decade Filtering
+            String startDecade = dotenv.get("START_DECADE");
+            if (startDecade != null) {
+                conf.set("startDecade", startDecade);
+                System.err.println("Loaded START_DECADE: " + startDecade);
+            }
+            String endDecade = dotenv.get("END_DECADE");
+            if (endDecade != null) {
+                conf.set("endDecade", endDecade);
+                System.err.println("Loaded END_DECADE: " + endDecade);
+            }
+
         } catch (Exception e) {
             System.err.println("Warning: Failed to load .env file: " + e.getMessage());
         }
+
+        // Log final configuration (useful for debugging EMR runs)
+        System.err.println("Effective Configuration:");
+        System.err.println("  START_DECADE (from conf): " + conf.get("startDecade", "ALL"));
+        System.err.println("  END_DECADE   (from conf): " + conf.get("endDecade", "ALL"));
 
         conf.set("mapreduce.job.counters.max", "1000");
 
@@ -87,8 +106,12 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         step1.setMapOutputValueClass(LongWritable.class);
         step1.setOutputKeyClass(DecadeWordWord.class);
         step1.setOutputValueClass(LongWritable.class);
-        step1.setInputFormatClass(TextInputFormat.class);
+
+        // ALWAYS use SequenceFileInputFormat now, for both local (via generated seq
+        // file) and cloud
+        step1.setInputFormatClass(SequenceFileInputFormat.class);
         step1.setOutputFormatClass(SequenceFileOutputFormat.class);
+
         FileInputFormat.addInputPath(step1, new Path(inputPath));
         FileOutputFormat.setOutputPath(step1, new Path(outputBasePath + "/step1"));
 

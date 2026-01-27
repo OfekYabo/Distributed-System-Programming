@@ -16,9 +16,21 @@ public class AggregationStep {
         private StopWords stopWords;
         private DecadeWordWord outKey = new DecadeWordWord();
         private LongWritable outValue = new LongWritable();
+        private int startDecade = -1;
+        private int endDecade = -1;
 
         @Override
         protected void setup(Context context) {
+            // Read configuration for filtering
+            String start = context.getConfiguration().get("startDecade");
+            if (start != null) {
+                startDecade = Integer.parseInt(start);
+            }
+            String end = context.getConfiguration().get("endDecade");
+            if (end != null) {
+                endDecade = Integer.parseInt(end);
+            }
+
             Object split = context.getInputSplit();
             if (!(split instanceof FileSplit)) {
                 throw new RuntimeException("Input split is not a FileSplit. Cannot determine language.");
@@ -63,6 +75,15 @@ public class AggregationStep {
                     return; // Ignore years outside reasonable range for Google Ngrams
                 }
                 int decade = (year / 10) * 10;
+
+                // Filter by configured Decade range
+                if (startDecade != -1 && decade < startDecade) {
+                    return;
+                }
+                if (endDecade != -1 && decade > endDecade) {
+                    return;
+                }
+
                 long count = Long.parseLong(countStr);
 
                 // Emit Key: DecadeWordWord(decade, w1, w2)
