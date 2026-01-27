@@ -57,30 +57,39 @@ public class AggregationStep {
                 return; // Malformed line
 
             // Google 2-gram format: "word1 word2 year match_count volume_count"
-
-            String w1 = parts[0];
-            String w2 = parts[1];
+            String rawW1 = parts[0];
+            String rawW2 = parts[1];
             String yearStr = parts[2];
             String countStr = parts[3];
 
+            // Sanitize and Validate Tokens
+            String w1 = sanitize(rawW1);
+            String w2 = sanitize(rawW2);
+
+            if (w1 == null || w2 == null) {
+                return;
+            }
+
             // Filter Stop Words
-            if (w1.isEmpty() || w2.isEmpty() || stopWords.isStopWord(w1) || stopWords.isStopWord(w2)) {
+            if (stopWords.isStopWord(w1) || stopWords.isStopWord(w2)) {
                 return;
             }
 
             // Extract Decade
             try {
                 int year = Integer.parseInt(yearStr);
-                if (year < 1900 || year > 2030) {
-                    return; // Ignore years outside reasonable range for Google Ngrams
-                }
                 int decade = (year / 10) * 10;
 
-                // Filter by configured Decade range
+                // 1. User Configuration Filter (Priority)
                 if (startDecade != -1 && decade < startDecade) {
                     return;
                 }
                 if (endDecade != -1 && decade > endDecade) {
+                    return;
+                }
+
+                // 2. Global Sanity Check (Broad Range)
+                if (year < 1500 || year > 2030) {
                     return;
                 }
 
@@ -94,6 +103,35 @@ public class AggregationStep {
             } catch (NumberFormatException e) {
                 // Ignore bad records
             }
+        }
+
+        /**
+         * Sanitizes a token by stripping punctuation and validating it.
+         * Returns null if the token should be ignored.
+         */
+        private String sanitize(String token) {
+            // Trim non-word characters from start and end (e.g. "the." -> "the", """ -> "")
+            String cleaned = token.replaceAll("^\\W+|\\W+$", "");
+
+            if (cleaned.isEmpty()) {
+                return null;
+            }
+
+            // Must contain at least one letter (English or Hebrew)
+            // This filters out things like "123", "--", etc. if they survived split
+            if (!cleaned.matches(".*[a-zA-Z\u0590-\u05FF].*")) {
+                return null;
+            }
+
+            // Filter single letters that are not 'a' or 'i' (or 'A', 'I')
+            // This handles detached contractions like "t", "s", "m", "d", "ll", "ve", "re"
+            if (cleaned.length() == 1) {
+                if (!cleaned.equalsIgnoreCase("a") && !cleaned.equalsIgnoreCase("i")) {
+                    return null;
+                }
+            }
+
+            return cleaned;
         }
     }
 
@@ -125,11 +163,6 @@ public class AggregationStep {
             }
             result.set(sum);
             context.write(key, result);
-
-            // Access Decade from Key
-            int decade = key.getDecade();
-            // Increment Global Counter for N: "N_1990"
-            context.getCounter("Decade_N", "N_" + decade).increment(sum);
         }
     }
 }
