@@ -17,7 +17,7 @@ Open a terminal in the project root (`Ass2` folder) and run:
 mvn clean package
 ```
 
-This will create `Ass2-1.0-SNAPSHOT.jar` in the `target/` directory.
+This will create `Ass2-2.0-SNAPSHOT.jar` in the `target/` directory.
 
 ---
 
@@ -47,7 +47,7 @@ If you want to run manually without the script:
 java -cp "target/Ass2-1.0-SNAPSHOT.jar;%HADOOP_HOME%/share/hadoop/common/*;%HADOOP_HOME%/share/hadoop/mapreduce/*" com.dsp.ass2.utils.CreateSequenceFile sample.txt sample.seq
 
 # 2. Run MapReduce Job
-hadoop jar target/Ass2-1.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_local
+hadoop jar target/Ass2-2.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_local
 ```
 
 ---
@@ -56,7 +56,7 @@ hadoop jar target/Ass2-1.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_loca
 
 ### Step A: Upload Files to S3
 1.  **Create a Bucket**: `s3://ds-assignment-2-ofek/` (Region: `us-east-1` recommended).
-2.  **Upload JAR**: Upload `target/Ass2-1.0-SNAPSHOT.jar` to the bucket.
+2.  **Upload JAR**: Upload `target/Ass2-2.0-SNAPSHOT.jar` to the bucket.
 3.  **Data**: Ensure you have the dataset path (e.g., Google N-Grams).
 
 ### Step B: Configure EMR
@@ -72,7 +72,7 @@ hadoop jar target/Ass2-1.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_loca
 Once the cluster is "Waiting", click **Steps** -> **Add step**:
 *   **Type**: Custom JAR
 *   **Name**: `Run Ass2`
-*   **JAR location**: `s3://ds-assignment-2-ofek/Ass2-1.0-SNAPSHOT.jar`
+*   **JAR location**: `s3://ds-assignment-2-ofek/Ass2-2.0-SNAPSHOT.jar`
 *   **Action on failure**: Continue (so you can debug logs).
 
 ## Predefined EMR Runs
@@ -80,32 +80,32 @@ Copy and paste the relevant arguments below into the **Arguments** field of the 
 
 ### 1. 2 Decades (1990-2000) - English
 ```text
--DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/eng_2_decades
+-DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v2/eng_2_decades
 ```
 
 ### 2. 2 Decades (1990-2000) - Hebrew
 ```text
--DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/heb_2_decades
+-DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v2/heb_2_decades
 ```
 
 ### 3. 10 Decades (1900-1990) - English
 ```text
--DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/eng_10_decades
+-DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v2/eng_10_decades
 ```
 
 ### 4. 10 Decades (1900-1990) - Hebrew
 ```text
--DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/heb_10_decades
+-DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v2/heb_10_decades
 ```
 
 ### 5. Full Run - English
 ```text
-com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/eng_full
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v2/eng_full
 ```
 
 ### 6. Full Run - Hebrew
 ```text
-com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/heb_full
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v2/heb_full
 ```
 
 ### Step D: Monitor & Download Results
@@ -120,6 +120,6 @@ First, upload your local sequence file (e.g., `data/input/googlebooks-eng-all-2g
 Then run this step (It will finish in seconds):
 
 ```text
-com.dsp.ass2.Main s3://ds-assignment-2-ofek/input/googlebooks-eng-all-2gram-20090715-0.seq s3://ds-assignment-2-ofek/output/test_local_file_on_cloud
+com.dsp.ass2.Main s3://ds-assignment-2-ofek/input/googlebooks-eng-all-2gram-20090715-0.seq s3://ds-assignment-2-ofek/output/v2/test_local_file_on_cloud
 ```
 
