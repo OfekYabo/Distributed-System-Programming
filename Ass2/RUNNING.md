@@ -17,7 +17,7 @@ Open a terminal in the project root (`Ass2` folder) and run:
 mvn clean package
 ```
 
-This will create `Ass2-3.0-SNAPSHOT.jar` in the `target/` directory.
+This will create `Ass2-4.0-SNAPSHOT.jar` in the `target/` directory.
 
 ---
 
@@ -47,7 +47,7 @@ If you want to run manually without the script:
 java -cp "target/Ass2-1.0-SNAPSHOT.jar;%HADOOP_HOME%/share/hadoop/common/*;%HADOOP_HOME%/share/hadoop/mapreduce/*" com.dsp.ass2.utils.CreateSequenceFile sample.txt sample.seq
 
 # 2. Run MapReduce Job
-hadoop jar target/Ass2-3.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_local
+hadoop jar target/Ass2-4.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_local
 ```
 
 ---
@@ -56,7 +56,7 @@ hadoop jar target/Ass2-3.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_loca
 
 ### Step A: Upload Files to S3
 1.  **Create a Bucket**: `s3://ds-assignment-2-ofek/` (Region: `us-east-1` recommended).
-2.  **Upload JAR**: Upload `target/Ass2-3.0-SNAPSHOT.jar` to the bucket.
+2.  **Upload JAR**: Upload `target/Ass2-4.0-SNAPSHOT.jar` to the bucket.
 3.  **Data**: Ensure you have the dataset path (e.g., Google N-Grams).
 
 ### Step B: Configure EMR
@@ -72,7 +72,7 @@ hadoop jar target/Ass2-3.0-SNAPSHOT.jar com.dsp.ass2.Main sample.seq output_loca
 Once the cluster is "Waiting", click **Steps** -> **Add step**:
 *   **Type**: Custom JAR
 *   **Name**: `Run Ass2`
-*   **JAR location**: `s3://ds-assignment-2-ofek/Ass2-3.0-SNAPSHOT.jar`
+*   **JAR location**: `s3://ds-assignment-2-ofek/Ass2-4.0-SNAPSHOT.jar`
 *   **Action on failure**: Continue (so you can debug logs).
 
 ## Predefined EMR Runs
@@ -80,32 +80,42 @@ Copy and paste the relevant arguments below into the **Arguments** field of the 
 
 ### 1. 2 Decades (1990-2000) - English
 ```text
--DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v3/eng_2_decades
+-DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_2_decades
 ```
 
 ### 2. 2 Decades (1990-2000) - Hebrew
 ```text
--DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v3/heb_2_decades
+-DstartDecade=1990 -DendDecade=2000 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v4/heb_2_decades
 ```
 
 ### 3. 10 Decades (1900-1990) - English
 ```text
--DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v3/eng_10_decades
+-DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_10_decades
 ```
 
 ### 4. 10 Decades (1900-1990) - Hebrew
 ```text
--DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v3/heb_10_decades
+-DstartDecade=1900 -DendDecade=1990 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v4/heb_10_decades
 ```
 
 ### 5. Full Run - English
 ```text
-com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v3/eng_full
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_full
 ```
 
 ### 6. Full Run - Hebrew
 ```text
-com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v3/heb_full
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data s3://ds-assignment-2-ofek/output/v4/heb_full
+```
+
+### 7. Small English Subset (1M) - Recommended for Fast Testing
+```text
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-1M/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_1M
+```
+
+### 8. Full Run - English (Great Britain)
+```text
+com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-gb-all/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_gb_full
 ```
 
 ### Step D: Monitor & Download Results
@@ -113,13 +123,32 @@ com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2
 2.  Check `stdout` / `stderr` logs for "Counters" output.
 3.  Once "Completed", go to S3 to see the results.
 
-### 7. Verification: Local Sample on EMR
+### 9. Verification: Local Sample on EMR
 First, upload your local sequence file (e.g., `data/input/googlebooks-eng-all-2gram-20090715-0.seq`) to:
 `s3://ds-assignment-2-ofek/input/googlebooks-eng-all-2gram-20090715-0.seq`
 
 Then run this step (It will finish in seconds):
 
 ```text
-com.dsp.ass2.Main s3://ds-assignment-2-ofek/input/googlebooks-eng-all-2gram-20090715-0.seq s3://ds-assignment-2-ofek/output/v3/test_local_file_on_cloud
+com.dsp.ass2.Main s3://ds-assignment-2-ofek/input/googlebooks-eng-all-2gram-20090715-0.seq s3://ds-assignment-2-ofek/output/v4/test_local_file_on_cloud
 ```
+
+## 8. Recover from Failure (Resume Capability)
+If your EMR cluster terminates after **Step 1 has successfully completed**, you can resume the job from Step 2 instead of starting over.
+
+**When to use:**
+*   Step 1 (Aggregation) finished successfully (green "Completed" status in EMR).
+*   The job failed or timed out during Step 2, 3, or 4.
+*   You have started a new EMR cluster.
+
+**How to use:**
+Add `-DstartStep=2` before the class name `com.dsp.ass2.Main`.
+
+**Example (Resume Full English Run):**
+```text
+-DstartStep=2 com.dsp.ass2.Main s3://datasets.elasticmapreduce/ngrams/books/20090715/eng-us-all/2gram/data s3://ds-assignment-2-ofek/output/v4/eng_full
+```
+
+**Note:** This skips Step 1 and uses the output that is already in S3 (`.../output/v4/eng_full/step1`) as the input for Step 2.
+
 
