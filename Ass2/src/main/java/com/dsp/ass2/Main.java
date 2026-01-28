@@ -1,0 +1,195 @@
+package com.dsp.ass2;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Counters;
+import org.apache.hadoop.mapreduce.Counter;
+import org.apache.hadoop.mapreduce.CounterGroup;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
+
+import com.dsp.ass2.steps.AggregationStep;
+import com.dsp.ass2.steps.C1CalculationStep;
+import com.dsp.ass2.steps.C2CalculationStep;
+import com.dsp.ass2.steps.SortStep;
+import com.dsp.ass2.models.DecadeWordWordKey;
+import com.dsp.ass2.models.WordPairValue;
+import com.dsp.ass2.models.C12C1Value;
+import com.dsp.ass2.models.DecadeLLRKey;
+
+public class Main extends org.apache.hadoop.conf.Configured implements Tool {
+
+    public static void main(String[] args) throws Exception {
+        int exitCode = ToolRunner.run(new Main(), args);
+        System.exit(exitCode);
+    }
+
+    @Override
+    public int run(String[] args) throws Exception {
+        // Log received arguments to stderr so they show up in EMR logs
+        System.err.println("Received " + args.length + " arguments: " + String.join(", ", args));
+
+        int offset = 0;
+        if (args.length > 0 && (args[0].contains("Main") || args[0].endsWith(".jar"))) {
+            System.err.println("Detected class name or jar in args[0], shifting offset.");
+            offset = 1;
+        }
+
+        if (args.length - offset < 2) {
+            System.err.println("Usage: Main <input path> <output path>");
+            return -1;
+        }
+
+        String inputPath = args[0 + offset];
+        String baseOutput = args[1 + offset];
+
+        // Generate a unique ID for this run (using timestamp)
+        String runId = String.valueOf(System.currentTimeMillis());
+        String outputBasePath = baseOutput + (baseOutput.endsWith("/") ? "" : "/") + runId;
+
+        System.err.println("Run ID: " + runId);
+        System.err.println("Output Base Path: " + outputBasePath);
+
+        Configuration conf = getConf();
+
+        // Load .env file and set properties
+        try {
+            io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.configure().ignoreIfMissing()
+                    .load();
+
+            // AWS Profile
+            String awsProfile = dotenv.get("AWS_PROFILE");
+            if (awsProfile != null && !awsProfile.isEmpty()) {
+                System.setProperty("aws.profile", awsProfile);
+                System.err.println("Loaded AWS_PROFILE from .env: " + awsProfile);
+            }
+
+            // Decade Filtering
+            String startDecade = dotenv.get("START_DECADE");
+            if (startDecade != null) {
+                conf.set("startDecade", startDecade);
+                System.err.println("Loaded START_DECADE: " + startDecade);
+            }
+            String endDecade = dotenv.get("END_DECADE");
+            if (endDecade != null) {
+                conf.set("endDecade", endDecade);
+                System.err.println("Loaded END_DECADE: " + endDecade);
+            }
+
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to load .env file: " + e.getMessage());
+        }
+
+        // Log final configuration (useful for debugging EMR runs)
+        System.err.println("Effective Configuration:");
+        System.err.println("  START_DECADE (from conf): " + conf.get("startDecade", "ALL"));
+        System.err.println("  END_DECADE   (from conf): " + conf.get("endDecade", "ALL"));
+
+        conf.set("mapreduce.job.counters.max", "1000");
+
+        // Read 'startStep' from configuration (default 1)
+        int startStep = conf.getInt("startStep", 1);
+        System.err.println("Starting from Step: " + startStep);
+
+        if (startStep > 2) {
+            System.err.println("Error: resumption is only supported from Step 1 (default) or Step 2.");
+            return 1;
+        }
+
+        // Step 1: Aggregation (Run only if startStep == 1)
+        if (startStep == 1) {
+            Job step1 = Job.getInstance(conf, "Step 1: Aggregation");
+            step1.setJarByClass(Main.class);
+            step1.setMapperClass(AggregationStep.AggregationMapper.class);
+            step1.setCombinerClass(AggregationStep.AggregationCombiner.class);
+            step1.setReducerClass(AggregationStep.AggregationReducer.class);
+            step1.setMapOutputKeyClass(DecadeWordWordKey.class);
+            step1.setMapOutputValueClass(LongWritable.class);
+            step1.setOutputKeyClass(DecadeWordWordKey.class);
+            step1.setOutputValueClass(LongWritable.class);
+
+            // ALWAYS use SequenceFileInputFormat now, for both local (via generated seq
+            // file) and cloud
+            step1.setInputFormatClass(SequenceFileInputFormat.class);
+            step1.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+            FileInputFormat.addInputPath(step1, new Path(inputPath));
+            FileOutputFormat.setOutputPath(step1, new Path(outputBasePath + "/step1"));
+
+            if (!step1.waitForCompletion(true))
+                return 1;
+        } else {
+            System.err.println("SKIPPING Step 1 (Aggregation)...");
+        }
+
+        // Step 2: C1 Calculation (MANDAOTRY if startStep <= 2)
+        Job step2 = Job.getInstance(conf, "Step 2: C1 Calculation");
+        step2.setJarByClass(Main.class);
+        step2.setMapperClass(C1CalculationStep.C1Mapper.class);
+        step2.setPartitionerClass(C1CalculationStep.C1Partitioner.class);
+        step2.setReducerClass(C1CalculationStep.C1Reducer.class);
+        step2.setMapOutputKeyClass(DecadeWordWordKey.class);
+        step2.setMapOutputValueClass(LongWritable.class);
+        step2.setOutputKeyClass(DecadeWordWordKey.class);
+        step2.setOutputValueClass(C12C1Value.class);
+        step2.setInputFormatClass(SequenceFileInputFormat.class);
+        step2.setOutputFormatClass(SequenceFileOutputFormat.class);
+        FileInputFormat.addInputPath(step2, new Path(outputBasePath + "/step1"));
+        FileOutputFormat.setOutputPath(step2, new Path(outputBasePath + "/step2"));
+
+        if (!step2.waitForCompletion(true))
+            return 1;
+
+        // Pass Decade_N counters to subsequent jobs
+        Counters counters = step2.getCounters();
+        CounterGroup decadeCounters = counters.getGroup("Decade_N");
+        for (Counter counter : decadeCounters) {
+            conf.setLong("N_" + counter.getName().replace("N_", ""), counter.getValue());
+            System.err.println("Passed Counter N_" + counter.getName().replace("N_", "") + " = " + counter.getValue());
+        }
+
+        // Step 3: C2 Calculation & LLR
+        Job step3 = Job.getInstance(conf, "Step 3: C2 Calculation & LLR");
+        step3.setJarByClass(Main.class);
+        step3.setMapperClass(C2CalculationStep.C2Mapper.class);
+        step3.setPartitionerClass(C2CalculationStep.C2Partitioner.class);
+        step3.setReducerClass(C2CalculationStep.C2Reducer.class);
+        step3.setMapOutputKeyClass(DecadeWordWordKey.class);
+        step3.setMapOutputValueClass(C12C1Value.class);
+        step3.setOutputKeyClass(DecadeLLRKey.class);
+        step3.setOutputValueClass(WordPairValue.class);
+        step3.setInputFormatClass(SequenceFileInputFormat.class);
+        step3.setOutputFormatClass(SequenceFileOutputFormat.class);
+        FileInputFormat.addInputPath(step3, new Path(outputBasePath + "/step2"));
+        FileOutputFormat.setOutputPath(step3, new Path(outputBasePath + "/step3"));
+
+        if (!step3.waitForCompletion(true))
+            return 1;
+
+        // Step 4: Sorting & Output
+        Job step4 = Job.getInstance(conf, "Step 4: Sorting");
+        step4.setJarByClass(Main.class);
+        step4.setMapperClass(SortStep.SortMapper.class);
+        step4.setPartitionerClass(SortStep.SortPartitioner.class);
+        step4.setGroupingComparatorClass(SortStep.SortGroupingComparator.class);
+        step4.setReducerClass(SortStep.SortReducer.class);
+        step4.setMapOutputKeyClass(DecadeLLRKey.class);
+        step4.setMapOutputValueClass(WordPairValue.class);
+        step4.setOutputKeyClass(Text.class);
+        step4.setOutputValueClass(Text.class);
+        step4.setInputFormatClass(SequenceFileInputFormat.class);
+        step4.setOutputFormatClass(TextOutputFormat.class);
+        FileInputFormat.addInputPath(step4, new Path(outputBasePath + "/step3"));
+        FileOutputFormat.setOutputPath(step4, new Path(outputBasePath + "/final_output"));
+
+        return step4.waitForCompletion(true) ? 0 : 1;
+    }
+}

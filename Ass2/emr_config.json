@@ -1,0 +1,9 @@
+[
+  {
+    "Classification": "mapred-site",
+    "Properties": {
+      "mapreduce.map.java.opts": "-Xmx2048m",
+      "mapreduce.reduce.java.opts": "-Xmx2048m"
+    }
+  }
+]
