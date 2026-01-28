@@ -95,29 +95,42 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
 
         conf.set("mapreduce.job.counters.max", "1000");
 
-        // Step 1: Aggregation
-        Job step1 = Job.getInstance(conf, "Step 1: Aggregation");
-        step1.setJarByClass(Main.class);
-        step1.setMapperClass(AggregationStep.AggregationMapper.class);
-        step1.setCombinerClass(AggregationStep.AggregationCombiner.class);
-        step1.setReducerClass(AggregationStep.AggregationReducer.class);
-        step1.setMapOutputKeyClass(DecadeWordWordKey.class);
-        step1.setMapOutputValueClass(LongWritable.class);
-        step1.setOutputKeyClass(DecadeWordWordKey.class);
-        step1.setOutputValueClass(LongWritable.class);
+        // Read 'startStep' from configuration (default 1)
+        int startStep = conf.getInt("startStep", 1);
+        System.err.println("Starting from Step: " + startStep);
 
-        // ALWAYS use SequenceFileInputFormat now, for both local (via generated seq
-        // file) and cloud
-        step1.setInputFormatClass(SequenceFileInputFormat.class);
-        step1.setOutputFormatClass(SequenceFileOutputFormat.class);
-
-        FileInputFormat.addInputPath(step1, new Path(inputPath));
-        FileOutputFormat.setOutputPath(step1, new Path(outputBasePath + "/step1"));
-
-        if (!step1.waitForCompletion(true))
+        if (startStep > 2) {
+            System.err.println("Error: resumption is only supported from Step 1 (default) or Step 2.");
             return 1;
+        }
 
-        // Step 2: C1 Calculation
+        // Step 1: Aggregation (Run only if startStep == 1)
+        if (startStep == 1) {
+            Job step1 = Job.getInstance(conf, "Step 1: Aggregation");
+            step1.setJarByClass(Main.class);
+            step1.setMapperClass(AggregationStep.AggregationMapper.class);
+            step1.setCombinerClass(AggregationStep.AggregationCombiner.class);
+            step1.setReducerClass(AggregationStep.AggregationReducer.class);
+            step1.setMapOutputKeyClass(DecadeWordWordKey.class);
+            step1.setMapOutputValueClass(LongWritable.class);
+            step1.setOutputKeyClass(DecadeWordWordKey.class);
+            step1.setOutputValueClass(LongWritable.class);
+
+            // ALWAYS use SequenceFileInputFormat now, for both local (via generated seq
+            // file) and cloud
+            step1.setInputFormatClass(SequenceFileInputFormat.class);
+            step1.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+            FileInputFormat.addInputPath(step1, new Path(inputPath));
+            FileOutputFormat.setOutputPath(step1, new Path(outputBasePath + "/step1"));
+
+            if (!step1.waitForCompletion(true))
+                return 1;
+        } else {
+            System.err.println("SKIPPING Step 1 (Aggregation)...");
+        }
+
+        // Step 2: C1 Calculation (MANDAOTRY if startStep <= 2)
         Job step2 = Job.getInstance(conf, "Step 2: C1 Calculation");
         step2.setJarByClass(Main.class);
         step2.setMapperClass(C1CalculationStep.C1Mapper.class);
@@ -135,11 +148,12 @@ public class Main extends org.apache.hadoop.conf.Configured implements Tool {
         if (!step2.waitForCompletion(true))
             return 1;
 
-        // Pass Decade_N counters to subsequent jobs (Now calculated in Step 2)
+        // Pass Decade_N counters to subsequent jobs
         Counters counters = step2.getCounters();
         CounterGroup decadeCounters = counters.getGroup("Decade_N");
         for (Counter counter : decadeCounters) {
             conf.setLong("N_" + counter.getName().replace("N_", ""), counter.getValue());
+            System.err.println("Passed Counter N_" + counter.getName().replace("N_", "") + " = " + counter.getValue());
         }
 
         // Step 3: C2 Calculation & LLR

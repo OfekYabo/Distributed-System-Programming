@@ -52,23 +52,28 @@ public class AggregationStep {
 
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-            String[] parts = value.toString().split("\\s+");
-            if (parts.length < 4)
+            // OPTIMIZATION: Use StringTokenizer instead of value.toString().split("\\s+")
+            // split() compiles a regex pattern every time, which is very slow for billions
+            // of records.
+            java.util.StringTokenizer tokenizer = new java.util.StringTokenizer(value.toString());
+
+            if (tokenizer.countTokens() < 4)
                 return; // Malformed line
 
             // Google 2-gram format: "word1 word2 year match_count volume_count"
-            String rawW1 = parts[0];
-            String rawW2 = parts[1];
-            String yearStr = parts[2];
-            String countStr = parts[3];
+            String rawW1 = tokenizer.nextToken();
+            String rawW2 = tokenizer.nextToken();
+            String yearStr = tokenizer.nextToken();
+            String countStr = tokenizer.nextToken();
 
             // Sanitize and Validate Tokens
             String w1 = sanitize(rawW1);
-            String w2 = sanitize(rawW2);
+            if (w1 == null)
+                return; // Fail fast
 
-            if (w1 == null || w2 == null) {
-                return;
-            }
+            String w2 = sanitize(rawW2);
+            if (w2 == null)
+                return; // Fail fast
 
             // Filter Stop Words
             if (stopWords.isStopWord(w1) || stopWords.isStopWord(w2)) {
@@ -108,25 +113,45 @@ public class AggregationStep {
         /**
          * Sanitizes a token by stripping punctuation and validating it.
          * Returns null if the token should be ignored.
+         * OPTIMIZATION: Replaced regex check with manual char check.
          */
         private String sanitize(String token) {
-            // Trim non-word characters from start and end (e.g. "the." -> "the", """ -> "")
-            String cleaned = token.replaceAll("^\\W+|\\W+$", "");
+            // Trim non-word characters from start and end (manual loop is faster than regex
+            // replaceAll)
+            int start = 0;
+            int end = token.length() - 1;
 
-            if (cleaned.isEmpty()) {
-                return null;
+            while (start <= end && !Character.isLetterOrDigit(token.charAt(start))) {
+                start++;
+            }
+            while (end >= start && !Character.isLetterOrDigit(token.charAt(end))) {
+                end--;
             }
 
+            if (start > end) {
+                return null; // Empty after trimming
+            }
+
+            String cleaned = token.substring(start, end + 1);
+
             // Must contain at least one letter (English or Hebrew)
-            // This filters out things like "123", "--", etc. if they survived split
-            if (!cleaned.matches(".*[a-zA-Z\u0590-\u05FF].*")) {
+            // OPTIMIZATION: Manual scan instead of matches(".*[a-zA-Z\u0590-\u05FF].*")
+            boolean hasLetter = false;
+            for (int i = 0; i < cleaned.length(); i++) {
+                char c = cleaned.charAt(i);
+                if (Character.isLetter(c)) {
+                    hasLetter = true;
+                    break;
+                }
+            }
+            if (!hasLetter) {
                 return null;
             }
 
             // Filter single letters that are not 'a' or 'i' (or 'A', 'I')
-            // This handles detached contractions like "t", "s", "m", "d", "ll", "ve", "re"
             if (cleaned.length() == 1) {
-                if (!cleaned.equalsIgnoreCase("a") && !cleaned.equalsIgnoreCase("i")) {
+                char c = cleaned.charAt(0);
+                if (c != 'a' && c != 'A' && c != 'i' && c != 'I') {
                     return null;
                 }
             }
