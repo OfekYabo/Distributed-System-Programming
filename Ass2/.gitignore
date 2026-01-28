@@ -51,3 +51,4 @@ input/
 output/
 logs/
 !data/EMR_output/**/*.log
+!209288588_208230235.zip
